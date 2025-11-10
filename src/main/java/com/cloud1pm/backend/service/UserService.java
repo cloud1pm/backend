@@ -10,6 +10,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.stream.Collectors; // 추가
 
 @Service
 @RequiredArgsConstructor
@@ -40,11 +41,28 @@ public class UserService {
     }
 
     @Transactional(readOnly = true)
-    public List<RiskSolution> getRiskSolutions(Long userId, Integer riskLevel) {
+    // [수정] 반환 타입을 List<RiskSolution>에서 List<RiskSolutionResponse>로 변경
+    public List<RiskSolutionResponse> getRiskSolutions(Long userId, Integer riskLevel) {
+        List<RiskSolution> solutions;
         if (riskLevel != null) {
-            return riskSolutionRepository.findByUserIdAndRiskLevel(userId, riskLevel);
+            solutions = riskSolutionRepository.findByUserIdAndRiskLevel(userId, riskLevel);
+        } else {
+            solutions = riskSolutionRepository.findByUserId(userId);
         }
-        return riskSolutionRepository.findByUserId(userId);
+
+        // [추가] Entity를 DTO로 변환하여 반환
+        return solutions.stream()
+                .map(this::convertToRiskSolutionResponse)
+                .collect(Collectors.toList());
+    }
+
+    // [추가] RiskSolution Entity를 RiskSolutionResponse DTO로 변환하는 private 메서드
+    private RiskSolutionResponse convertToRiskSolutionResponse(RiskSolution solution) {
+        return RiskSolutionResponse.builder()
+                .id(solution.getId())
+                .riskLevel(solution.getRiskLevel())
+                .solution(solution.getSolution())
+                .build();
     }
 
     @Transactional
@@ -69,6 +87,15 @@ public class UserService {
         // 밥 +1
         user.addRice(1);
         userRepository.save(user);
+    }
+
+    // 응원 문구 전체 가져오기 (추가됨)
+    @Transactional(readOnly = true)
+    public List<EncouragementMessage> getEncouragementMessages(Long userId) {
+        if (!userRepository.existsById(userId)) {
+            throw new RuntimeException("User not found");
+        }
+        return encouragementMessageRepository.findByUserIdOrderByDateDesc(userId);
     }
 
     @Transactional

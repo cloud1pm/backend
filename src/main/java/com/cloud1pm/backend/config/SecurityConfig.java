@@ -33,6 +33,8 @@ public class SecurityConfig {
                         session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/auth/**", "/login/**", "/oauth2/**").permitAll()
+                        // [수정] 명시적으로 /api/** 경로를 인증된 사용자에게만 허용
+                        .requestMatchers("/api/**").authenticated()
                         .anyRequest().authenticated()
                 )
                 .oauth2Login(oauth2 -> oauth2

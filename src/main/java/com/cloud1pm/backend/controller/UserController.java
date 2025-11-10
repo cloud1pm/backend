@@ -2,7 +2,8 @@ package com.cloud1pm.backend.controller;
 
 import com.cloud1pm.backend.dto.InitialSetupRequest;
 import com.cloud1pm.backend.dto.UserStatusResponse;
-import com.cloud1pm.backend.entity.RiskSolution;
+import com.cloud1pm.backend.dto.RiskSolutionResponse; // 추가
+import com.cloud1pm.backend.entity.EncouragementMessage; // Added import
 import com.cloud1pm.backend.service.UserService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -29,11 +30,12 @@ public class UserController {
     }
 
     @GetMapping("/risk-solutions")
-    public ResponseEntity<List<RiskSolution>> getRiskSolutions(
+    // [수정] 반환 타입을 List<RiskSolution>에서 List<RiskSolutionResponse>로 변경
+    public ResponseEntity<List<RiskSolutionResponse>> getRiskSolutions(
             Authentication authentication,
             @RequestParam(required = false) Integer riskLevel) {
         Long userId = (Long) authentication.getPrincipal();
-        List<RiskSolution> solutions = userService.getRiskSolutions(userId, riskLevel);
+        List<RiskSolutionResponse> solutions = userService.getRiskSolutions(userId, riskLevel);
         return ResponseEntity.ok(solutions);
     }
 
@@ -44,6 +46,15 @@ public class UserController {
         Long userId = (Long) authentication.getPrincipal();
         userService.createEncouragementMessage(userId, request.get("message"));
         return ResponseEntity.ok().build();
+    }
+
+    // 응원 문구 전체 가져오기 (추가됨)
+    @GetMapping("/encouragement")
+    public ResponseEntity<List<EncouragementMessage>> getAllEncouragementMessages(
+            Authentication authentication) {
+        Long userId = (Long) authentication.getPrincipal();
+        List<EncouragementMessage> messages = userService.getEncouragementMessages(userId);
+        return ResponseEntity.ok(messages);
     }
 
     @PostMapping("/feed-character")

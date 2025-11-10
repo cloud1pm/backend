@@ -4,8 +4,8 @@ package com.cloud1pm.backend.service;
 import com.cloud1pm.backend.dto.ChatRequest;
 import com.cloud1pm.backend.dto.ChatResponse;
 import com.cloud1pm.backend.dto.EmotionTrendResponse;
+import com.cloud1pm.backend.dto.RiskSolutionResponse; // [수정] RiskSolution 대신 DTO import
 import com.cloud1pm.backend.entity.ChatMessage;
-import com.cloud1pm.backend.entity.RiskSolution; // 추가
 import com.cloud1pm.backend.entity.User;
 import com.cloud1pm.backend.repository.ChatMessageRepository;
 import com.cloud1pm.backend.repository.UserRepository;
@@ -79,7 +79,8 @@ public class ChatService {
      */
     private String getRiskRecommendation(Long userId, int riskLevel) {
         // 위험도 척도(1-10)와 정확히 일치하는 해결 방안을 찾습니다.
-        List<RiskSolution> solutions = userService.getRiskSolutions(userId, riskLevel);
+        // [수정] 반환 타입을 List<RiskSolutionResponse>로 변경
+        List<RiskSolutionResponse> solutions = userService.getRiskSolutions(userId, riskLevel);
 
         if (!solutions.isEmpty()) {
             // 해당 위험도에 대한 사용자가 설정한 해결 방안을 응답에 추가합니다.

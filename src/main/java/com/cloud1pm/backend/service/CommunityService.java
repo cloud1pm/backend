@@ -69,6 +69,37 @@ public class CommunityService {
                 .build();
     }
 
+    // 게시물 수정 (추가됨)
+    @Transactional
+    public PostResponse updatePost(Long postId, Long userId, CreatePostRequest request) {
+        Post post = postRepository.findById(postId)
+                .orElseThrow(() -> new RuntimeException("Post not found"));
+
+        if (!post.getUser().getId().equals(userId)) {
+            throw new RuntimeException("Unauthorized: Only the author can update the post.");
+        }
+
+        post.setTitle(request.getTitle());
+        post.setContent(request.getContent());
+
+        Post updatedPost = postRepository.save(post);
+        return convertToPostResponse(updatedPost, userId);
+    }
+
+    // 게시물 삭제 (추가됨)
+    @Transactional
+    public void deletePost(Long postId, Long userId) {
+        Post post = postRepository.findById(postId)
+                .orElseThrow(() -> new RuntimeException("Post not found"));
+
+        if (!post.getUser().getId().equals(userId)) {
+            throw new RuntimeException("Unauthorized: Only the author can delete the post.");
+        }
+
+        // JPA Cascade 설정이 되어 있다고 가정하고 Post만 삭제
+        postRepository.delete(post);
+    }
+
     @Transactional
     public CommentResponse createComment(Long postId, Long userId, CreateCommentRequest request) {
         Post post = postRepository.findById(postId)
@@ -89,6 +120,19 @@ public class CommunityService {
         userService.addRiceForComment(userId);
 
         return convertToCommentResponse(savedComment);
+    }
+
+    // 댓글 삭제 (추가됨)
+    @Transactional
+    public void deleteComment(Long commentId, Long userId) {
+        Comment comment = commentRepository.findById(commentId)
+                .orElseThrow(() -> new RuntimeException("Comment not found"));
+
+        if (!comment.getUser().getId().equals(userId)) {
+            throw new RuntimeException("Unauthorized: Only the author can delete the comment.");
+        }
+
+        commentRepository.delete(comment);
     }
 
     @Transactional
@@ -121,6 +165,14 @@ public class CommunityService {
                 );
 
         postRepository.save(post);
+    }
+
+    // 좋아요 개수 가져오기 (추가됨)
+    @Transactional(readOnly = true)
+    public int getLikeCount(Long postId) {
+        Post post = postRepository.findById(postId)
+                .orElseThrow(() -> new RuntimeException("Post not found"));
+        return post.getLikeCount();
     }
 
     private PostResponse convertToPostResponse(Post post, Long currentUserId) {
