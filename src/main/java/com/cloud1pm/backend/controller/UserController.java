@@ -1,5 +1,6 @@
 package com.cloud1pm.backend.controller;
 
+import com.cloud1pm.backend.dto.FeedCharacterResponse;
 import com.cloud1pm.backend.dto.InitialSetupRequest;
 import com.cloud1pm.backend.dto.UserStatusResponse;
 import com.cloud1pm.backend.dto.RiskSolutionResponse; // 추가
@@ -8,6 +9,8 @@ import com.cloud1pm.backend.service.UserService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -30,7 +33,6 @@ public class UserController {
     }
 
     @GetMapping("/risk-solutions")
-    // [수정] 반환 타입을 List<RiskSolution>에서 List<RiskSolutionResponse>로 변경
     public ResponseEntity<List<RiskSolutionResponse>> getRiskSolutions(
             Authentication authentication,
             @RequestParam(required = false) Integer riskLevel) {
@@ -48,7 +50,7 @@ public class UserController {
         return ResponseEntity.ok().build();
     }
 
-    // 응원 문구 전체 가져오기 (추가됨)
+    // 응원 문구 전체 가져오기
     @GetMapping("/encouragement")
     public ResponseEntity<List<EncouragementMessage>> getAllEncouragementMessages(
             Authentication authentication) {
@@ -58,10 +60,10 @@ public class UserController {
     }
 
     @PostMapping("/feed-character")
-    public ResponseEntity<Void> feedCharacter(Authentication authentication) {
-        Long userId = (Long) authentication.getPrincipal();
-        userService.feedCharacter(userId);
-        return ResponseEntity.ok().build();
+    public ResponseEntity<FeedCharacterResponse> feedCharacter(@AuthenticationPrincipal UserDetails userDetails) {
+        Long userId = Long.parseLong(userDetails.getUsername());
+        FeedCharacterResponse response = userService.feedCharacter(userId);
+        return ResponseEntity.ok(response);
     }
 
     @GetMapping("/status")

@@ -1,39 +1,42 @@
+// src/main/java/com/cloud1pm/backend/entity/ChatMessage.java
 package com.cloud1pm.backend.entity;
 
-import jakarta.persistence.*;
 import lombok.*;
 import org.hibernate.annotations.CreationTimestamp;
 
+import jakarta.persistence.*;
 import java.time.LocalDateTime;
 
 @Entity
 @Table(name = "chat_messages")
 @Getter
 @Setter
+@Builder
 @NoArgsConstructor
 @AllArgsConstructor
-@Builder
 public class ChatMessage {
-
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    @Column(name = "user_id", nullable = false)
+    private Long userId;
+
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "user_id", nullable = false)
-    private User user;
+    @JoinColumn(name = "session_id", nullable = false)
+    private ChatSession session;
 
     @Column(nullable = false, columnDefinition = "TEXT")
     private String message;
 
-    @Column(nullable = false)
-    private Boolean isUserMessage; // true: 사용자 메시지, false: 챗봇 응답
+    @Column(name = "is_user_message", nullable = false)
+    private Boolean isUserMessage;
 
-    @Column
-    private String sentiment; // positive, negative, neutral
+    @Column(length = 20)
+    private String sentiment;
 
-    @Column
-    private Double sentimentScore; // 감정 점수
+    @Column(name = "sentiment_score")
+    private Double sentimentScore;
 
     @CreationTimestamp
     @Column(updatable = false)

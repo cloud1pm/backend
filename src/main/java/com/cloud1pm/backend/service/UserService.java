@@ -3,6 +3,7 @@ package com.cloud1pm.backend.service;
 import com.cloud1pm.backend.dto.*;
 import com.cloud1pm.backend.entity.*;
 import com.cloud1pm.backend.repository.*;
+import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -99,17 +100,45 @@ public class UserService {
     }
 
     @Transactional
-    public void feedCharacter(Long userId) {
+    public FeedCharacterResponse feedCharacter(Long userId) {
         User user = userRepository.findById(userId)
-                .orElseThrow(() -> new RuntimeException("User not found"));
+                .orElseThrow(() -> new EntityNotFoundException("User not found with id: " + userId));
 
-        if (user.getRice() < 1) {
-            throw new RuntimeException("Not enough rice");
+        int currentLevel = user.getCharacterLevel();
+        int requiredRice = getRequiredRiceForLevel(currentLevel);
+        final int FEED_TO_LEVEL_UP = 5; // 레벨업에 필요한 밥 주기 횟수
+
+        if (user.getRice() < requiredRice) {
+            return FeedCharacterResponse.builder()
+                    .newRiceCount(user.getRice())
+                    .newLevel(currentLevel)
+                    .message(String.format("밥이 부족합니다. 레벨 %d에서 필요한 밥은 %d개입니다. (보유: %d)", currentLevel, requiredRice, user.getRice()))
+                    .build();
         }
 
-        user.setRice(user.getRice() - 1);
-        user.feedCharacter();
+        // 밥 소모
+        user.setRice(user.getRice() - requiredRice);
+
+        // 경험치 증가 (feed_count)
+        user.setFeedCount(user.getFeedCount() + 1);
+
+        String message;
+        if (user.getFeedCount() >= FEED_TO_LEVEL_UP) {
+            // 레벨업 처리
+            user.setCharacterLevel(currentLevel + 1);
+            user.setFeedCount(0); // 레벨업 후 카운트 초기화
+            message = String.format("🎉 캐릭터가 레벨 %d로 성장했습니다! 레벨업 축하 메시지.", user.getCharacterLevel());
+        } else {
+            message = String.format("밥 %d개를 성공적으로 먹였습니다. 다음 레벨업까지 %d번 남았습니다.", requiredRice, FEED_TO_LEVEL_UP - user.getFeedCount());
+        }
+
         userRepository.save(user);
+
+        return FeedCharacterResponse.builder()
+                .newRiceCount(user.getRice())
+                .newLevel(user.getCharacterLevel())
+                .message(message)
+                .build();
     }
 
     @Transactional(readOnly = true)
@@ -163,5 +192,18 @@ public class UserService {
             user.addRice(1); // 일반 출석 보상
         }
         userRepository.save(user);
+    }
+
+    private int getRequiredRiceForLevel(int level) {
+        final int BASE_RICE = 1;
+
+        if (level <= 1) return BASE_RICE;
+
+        // 밥 요구량 증가 로직 (예시: 레벨이 높을수록 가파르게 증가)
+        if (level <= 5) return level * BASE_RICE;
+        if (level <= 10) return 5 + (level - 5) * 2;
+        if (level <= 20) return 15 + (level - 10) * 3;
+
+        return 45 + (level - 20) * 5;
     }
 }

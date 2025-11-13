@@ -13,7 +13,6 @@ import java.util.stream.Collectors;
 @Service
 @RequiredArgsConstructor
 public class CommunityService {
-
     private final PostRepository postRepository;
     private final CommentRepository commentRepository;
     private final PostLikeRepository postLikeRepository;
@@ -193,11 +192,20 @@ public class CommunityService {
 
     private CommentResponse convertToCommentResponse(Comment comment) {
         return CommentResponse.builder()
-                .id(comment.getId())
+                .commentId(comment.getId())
                 .content(comment.getContent())
                 .authorName(comment.getUser().getName())
                 .authorProfileImage(comment.getUser().getProfileImageUrl())
                 .createdAt(comment.getCreatedAt())
                 .build();
+    }
+
+    @Transactional(readOnly = true)
+    public List<PostResponse> getMyPosts(Long userId) {
+        List<Post> posts = postRepository.findAllByUserIdOrderByCreatedAtDesc(userId);
+
+        return posts.stream()
+                .map(post -> convertToPostResponse(post, userId)) // fromEntity 대신 기존 메서드 사용
+                .collect(Collectors.toList());
     }
 }
