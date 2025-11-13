@@ -16,6 +16,7 @@ import java.time.LocalDateTime;
 @AllArgsConstructor
 @Builder
 public class User {
+    public static final String DEFAULT_PROFILE_IMAGE_URL = "/default/profile.png";
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -23,6 +24,8 @@ public class User {
 
     @Column(nullable = false, unique = true)
     private String email;
+
+    private String password;
 
     @Column(nullable = false)
     private String name;
@@ -88,5 +91,15 @@ public class User {
             consecutiveDays = 1;
         }
         lastLoginDate = today;
+    }
+
+    // [추가] 닉네임 수정
+    public void updateName(String name) {
+        this.name = name;
+    }
+
+    // [추가] 프로필 이미지 수정
+    public void updateProfileImageUrl(String profileImageUrl) {
+        this.profileImageUrl = profileImageUrl;
     }
 }

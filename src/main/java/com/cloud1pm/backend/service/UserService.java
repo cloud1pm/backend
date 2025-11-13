@@ -3,14 +3,17 @@ package com.cloud1pm.backend.service;
 import com.cloud1pm.backend.dto.*;
 import com.cloud1pm.backend.entity.*;
 import com.cloud1pm.backend.repository.*;
+import com.cloud1pm.backend.security.JwtUtil;
 import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 import java.util.stream.Collectors; // 추가
 
 @Service
@@ -21,6 +24,161 @@ public class UserService {
     private final EncouragementMessageRepository encouragementMessageRepository;
     private final CommentRepository commentRepository;
     private final PostLikeRepository postLikeRepository;
+    private final PasswordEncoder passwordEncoder;
+    private final JwtUtil jwtUtil;
+
+    @Transactional
+    public UserProfileResponse signUp(SignUpRequest request) {
+        if (userRepository.existsByEmail(request.getEmail())) {
+            throw new IllegalArgumentException("Email already in use");
+        }
+        if (!request.getPassword().equals(request.getConfirmPassword())) {
+            throw new IllegalArgumentException("Password and confirm password do not match");
+        }
+        if (request.getRiskSolutions() == null || request.getRiskSolutions().isEmpty()) {
+            throw new IllegalArgumentException("Initial setup solutions are required for sign-up");
+        }
+
+        // 닉네임 자동 생성 (없을 때)
+        String name = Optional.ofNullable(request.getName())
+                .filter(n -> !n.isBlank())
+                .orElseGet(() -> request.getEmail().split("@")[0]);
+
+        // 기본 프로필 이미지 설정 (입력 없을 때)
+        String profileImageUrl = Optional.ofNullable(request.getProfileImageUrl())
+                .filter(url -> !url.isBlank())
+                .orElse(User.DEFAULT_PROFILE_IMAGE_URL);
+
+        // User 엔티티 생성 및 저장
+        User user = User.builder()
+                .email(request.getEmail())
+                .password(passwordEncoder.encode(request.getPassword()))
+                .name(name)
+                .profileImageUrl(profileImageUrl)
+                .provider(null) // 일반 로그인
+                .providerId(null) // 일반 로그인
+                .hasCompletedInitialSetup(true)
+                .build();
+        userRepository.save(user);
+
+        // 위험도별 해결방안 저장 (단계 1~5 가정)
+        request.getRiskSolutions().forEach(solution -> {
+            if (solution.getRiskLevel() < 1 || solution.getRiskLevel() > 5) {
+                throw new IllegalArgumentException("Risk level must be between 1 and 5");
+            }
+            RiskSolution riskSolution = RiskSolution.builder()
+                    .user(user)
+                    .riskLevel(solution.getRiskLevel())
+                    .solution(solution.getSolution())
+                    .build();
+            riskSolutionRepository.save(riskSolution);
+        });
+
+        return UserProfileResponse.from(user);
+    }
+
+    // [추가] 로그인
+    public String signIn(SignInRequest request) {
+        User user = userRepository.findByEmail(request.getEmail())
+                .orElseThrow(() -> new EntityNotFoundException("Invalid email or password"));
+
+        if (user.getPassword() == null || !passwordEncoder.matches(request.getPassword(), user.getPassword())) {
+            throw new EntityNotFoundException("Invalid email or password");
+        }
+
+        // 로그인 성공 시 연속 출석 체크
+        user.checkConsecutiveLogin();
+        userRepository.save(user);
+
+        // JWT 토큰 생성 및 반환
+        return jwtUtil.generateToken(user.getId(), user.getEmail());
+    }
+
+    // [수정] completeInitialSetup - 초기 설정 재설정/수정 기능으로 활용
+    @Transactional
+    public void saveOrUpdateRiskSolutions(Long userId, InitialSetupRequest request) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+
+        // 기존 해결방안 삭제 후 다시 저장 (수정) - deleteByUserId가 RiskSolutionRepository에 추가되어 해결
+        riskSolutionRepository.deleteByUserId(userId);
+
+        request.getRiskSolutions().forEach(solution -> {
+            if (solution.getRiskLevel() < 1 || solution.getRiskLevel() > 5) {
+                throw new IllegalArgumentException("Risk level must be between 1 and 5");
+            }
+            RiskSolution riskSolution = RiskSolution.builder()
+                    .user(user)
+                    .riskLevel(solution.getRiskLevel())
+                    .solution(solution.getSolution())
+                    .build();
+            riskSolutionRepository.save(riskSolution);
+        });
+
+        user.setHasCompletedInitialSetup(true);
+        userRepository.save(user);
+    }
+
+    // [추가] 회원 정보 조회
+    @Transactional(readOnly = true)
+    public UserProfileResponse getUserProfile(Long userId) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new EntityNotFoundException("User not found with id: " + userId));
+        return UserProfileResponse.from(user);
+    }
+
+    // [추가] 회원 정보 수정 (닉네임, 사진)
+    @Transactional
+    public UserProfileResponse updateUserProfile(Long userId, UserUpdateRequest request) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new EntityNotFoundException("User not found with id: " + userId));
+
+        Optional.ofNullable(request.getName())
+                .filter(n -> !n.isBlank())
+                .ifPresent(user::updateName);
+
+        // null을 허용하면 기본 이미지로 업데이트
+        String profileImageUrl = Optional.ofNullable(request.getProfileImageUrl())
+                .filter(url -> !url.isBlank())
+                .orElse(User.DEFAULT_PROFILE_IMAGE_URL);
+        user.updateProfileImageUrl(profileImageUrl);
+
+        userRepository.save(user);
+        return UserProfileResponse.from(user);
+    }
+
+    // [추가] 비밀번호 수정
+    @Transactional
+    public void updatePassword(Long userId, PasswordUpdateRequest request) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new EntityNotFoundException("User not found with id: " + userId));
+
+        if (user.getPassword() == null) {
+            throw new IllegalArgumentException("Social login user cannot change password.");
+        }
+
+        if (!request.getNewPassword().equals(request.getConfirmNewPassword())) {
+            throw new IllegalArgumentException("New password and confirm password do not match");
+        }
+
+        user.setPassword(passwordEncoder.encode(request.getNewPassword()));
+        userRepository.save(user);
+    }
+
+    // [추가] 회원 탈퇴
+    @Transactional
+    public void deleteUser(Long userId) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new EntityNotFoundException("User not found with id: " + userId));
+
+        // 관련된 모든 데이터 삭제 (실제로는 논리적 삭제를 고려해야 합니다.)
+        riskSolutionRepository.deleteByUserId(userId);
+        // encouragementMessageRepository.deleteByUser(user); // 해당 레포지토리의 deleteBy... 메서드 필요
+        // commentRepository.deleteByUser(user);
+        // postLikeRepository.deleteByUser(user);
+
+        userRepository.delete(user);
+    }
 
     @Transactional
     public void completeInitialSetup(Long userId, InitialSetupRequest request) {
