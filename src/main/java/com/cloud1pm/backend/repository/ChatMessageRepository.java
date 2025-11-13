@@ -1,4 +1,3 @@
-// === ChatMessageRepository.java ===
 package com.cloud1pm.backend.repository;
 
 import com.cloud1pm.backend.entity.ChatMessage;
@@ -11,14 +10,14 @@ import java.util.List;
 
 @Repository
 public interface ChatMessageRepository extends JpaRepository<ChatMessage, Long> {
-    List<ChatMessage> findByUserIdOrderByCreatedAtDesc(Long userId);
+    List<ChatMessage> findAllBySessionIdOrderByCreatedAtAsc(Long sessionId);
 
-    @Query("SELECT c FROM ChatMessage c WHERE c.user.id = :userId " +
+    @Query("SELECT c FROM ChatMessage c WHERE c.userId = :userId " +
             "AND c.createdAt >= :startDate ORDER BY c.createdAt DESC")
     List<ChatMessage> findRecentMessages(@Param("userId") Long userId,
                                          @Param("startDate") LocalDateTime startDate);
 
-    @Query("SELECT c FROM ChatMessage c WHERE c.user.id = :userId " +
+    @Query("SELECT c FROM ChatMessage c WHERE c.userId = :userId " +
             "AND c.isUserMessage = true AND c.sentiment IS NOT NULL " +
             "AND c.createdAt >= :startDate ORDER BY c.createdAt DESC")
     List<ChatMessage> findUserMessagesForRiskAnalysis(@Param("userId") Long userId,

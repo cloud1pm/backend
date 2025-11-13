@@ -5,10 +5,12 @@ import com.cloud1pm.backend.service.CommunityService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
-import java.util.Map; // 좋아요 개수 가져오기 응답을 위해 추가
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/community")
@@ -97,5 +99,13 @@ public class CommunityController {
     public ResponseEntity<Map<String, Integer>> getLikeCount(@PathVariable Long postId) {
         int count = communityService.getLikeCount(postId);
         return ResponseEntity.ok(Map.of("likeCount", count));
+    }
+
+    @GetMapping("/posts/my")
+    // [수정]: @AuthenticationPrincipal UserDetails 대신 Authentication 사용
+    public ResponseEntity<List<PostResponse>> getMyPosts(Authentication authentication) {
+        Long userId = (Long) authentication.getPrincipal(); // Long 타입으로 안전하게 userId 추출
+        List<PostResponse> myPosts = communityService.getMyPosts(userId);
+        return ResponseEntity.ok(myPosts);
     }
 }

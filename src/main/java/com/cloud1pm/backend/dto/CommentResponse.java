@@ -10,7 +10,7 @@ import java.time.LocalDateTime;
 @NoArgsConstructor
 @AllArgsConstructor
 public class CommentResponse {
-    private Long id;
+    private Long commentId;
     private String content;
     private String authorName;
     private String authorProfileImage;

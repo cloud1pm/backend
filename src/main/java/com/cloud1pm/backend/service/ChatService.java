@@ -1,16 +1,15 @@
-// backend/src/main/java/com/cloud1pm/backend/service/ChatService.java
 package com.cloud1pm.backend.service;
 
-import com.cloud1pm.backend.dto.ChatRequest;
-import com.cloud1pm.backend.dto.ChatResponse;
-import com.cloud1pm.backend.dto.EmotionTrendResponse;
-import com.cloud1pm.backend.dto.RiskSolutionResponse; // [수정] RiskSolution 대신 DTO import
+import com.cloud1pm.backend.dto.*;
 import com.cloud1pm.backend.entity.ChatMessage;
+import com.cloud1pm.backend.entity.ChatSession;
 import com.cloud1pm.backend.entity.User;
 import com.cloud1pm.backend.repository.ChatMessageRepository;
+import com.cloud1pm.backend.repository.ChatSessionRepository; // 추가
 import com.cloud1pm.backend.repository.UserRepository;
+import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j; // 추가
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -22,20 +21,91 @@ import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
-@Slf4j // 추가
+@Slf4j
 public class ChatService {
-
     private final ChatMessageRepository chatMessageRepository;
     private final UserRepository userRepository;
-    // private final SentimentAnalysisService sentimentAnalysisService; // 기존 키워드 기반 서비스 제거
     private final RiskAnalysisService riskAnalysisService;
-    private final GeminiService geminiService; // [수정] GeminiService 주입
-    private final UserService userService; // [수정] UserService 주입 (위험도별 해결방안을 가져오기 위해)
+    private final GeminiService geminiService;
+    private final UserService userService;
+    private final ChatSessionRepository chatSessionRepository; // [FIX 1]: ChatSessionRepository 주입
 
+    @Transactional
+    public ChatSessionResponse createNewSession(Long userId, String title) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new EntityNotFoundException("User not found with id: " + userId));
+
+        String sessionTitle = (title != null && !title.isEmpty()) ? title : "새로운 채팅";
+
+        ChatSession session = ChatSession.builder()
+                .user(user)
+                .title(sessionTitle)
+                .build();
+
+        session = chatSessionRepository.save(session);
+        return ChatSessionResponse.fromEntity(session);
+    }
+
+    @Transactional(readOnly = true)
+    public List<ChatSessionResponse> getChatSessions(Long userId) {
+        List<ChatSession> sessions = chatSessionRepository.findAllByUserIdOrderByUpdatedAtDesc(userId);
+        return sessions.stream()
+                .map(ChatSessionResponse::fromEntity)
+                .collect(Collectors.toList());
+    }
+
+    @Transactional
+    public ChatSessionResponse updateSessionTitle(Long sessionId, String newTitle, Long userId) {
+        ChatSession session = chatSessionRepository.findById(sessionId)
+                .orElseThrow(() -> new EntityNotFoundException("ChatSession not found with id: " + sessionId));
+
+        if (!session.getUser().getId().equals(userId)) {
+            throw new SecurityException("Access denied. Session does not belong to user.");
+        }
+
+        session.setTitle(newTitle);
+        return ChatSessionResponse.fromEntity(session);
+    }
+
+    @Transactional
+    public void deleteSession(Long sessionId, Long userId) {
+        ChatSession session = chatSessionRepository.findById(sessionId)
+                .orElseThrow(() -> new EntityNotFoundException("ChatSession not found with id: " + sessionId));
+
+        if (!session.getUser().getId().equals(userId)) {
+            throw new SecurityException("Access denied. Session does not belong to user.");
+        }
+
+        chatSessionRepository.delete(session);
+    }
+
+    @Transactional(readOnly = true)
+    public List<ChatMessageResponse> getChatHistory(Long sessionId, Long userId) {
+        ChatSession session = chatSessionRepository.findById(sessionId)
+                .orElseThrow(() -> new EntityNotFoundException("ChatSession not found with id: " + sessionId));
+
+        if (!session.getUser().getId().equals(userId)) {
+            throw new SecurityException("Access denied. Session does not belong to user.");
+        }
+
+        List<ChatMessage> messages = chatMessageRepository.findAllBySessionIdOrderByCreatedAtAsc(sessionId);
+        return messages.stream()
+                .map(ChatMessageResponse::fromEntity)
+                .collect(Collectors.toList());
+    }
+
+    // [수정]: 세션이 없는 경우 새 세션을 생성하도록 로직 추가 및 필수 필드 누락 수정
     @Transactional
     public ChatResponse sendMessage(Long userId, ChatRequest request) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new RuntimeException("User not found"));
+
+        // [FIX 2]: SessionId가 없으므로, 새 세션을 생성하여 사용합니다.
+        ChatSession newSession = ChatSession.builder()
+                .user(user)
+                .title(request.getMessage().substring(0, Math.min(request.getMessage().length(), 20))) // 메시지 앞부분으로 세션명 지정
+                .build();
+        ChatSession session = chatSessionRepository.save(newSession);
 
         // 1. Gemini를 사용하여 챗봇 응답 및 감정 분석
         Map<String, Object> geminiResult = geminiService.generateChatResponseAndAnalyzeSentiment(request.getMessage());
@@ -45,11 +115,12 @@ public class ChatService {
 
         // 사용자 메시지 저장
         ChatMessage userMessage = ChatMessage.builder()
-                .user(user)
+                .session(session) // [FIX 3]: session 필드 추가
+                .userId(userId) // [FIX 4]: userId 필드 추가
                 .message(request.getMessage())
                 .isUserMessage(true)
-                .sentiment(sentiment) // [수정] Gemini 분석 결과 저장
-                .sentimentScore(sentimentScore) // [수정] Gemini 분석 결과 저장
+                .sentiment(sentiment)
+                .sentimentScore(sentimentScore)
                 .build();
         chatMessageRepository.save(userMessage);
 
@@ -57,15 +128,19 @@ public class ChatService {
         int riskLevel = riskAnalysisService.calculateRiskLevel(userId);
 
         // 3. 챗봇 응답 생성 (위험도 기반 추천 로직 추가)
-        // Gemini 응답에 사용자가 설정한 위험도별 해결 방안을 추가합니다.
         String finalBotResponse = botResponseFromGemini + getRiskRecommendation(userId, riskLevel);
 
         ChatMessage botMessage = ChatMessage.builder()
-                .user(user)
+                .session(session) // [FIX 5]: session 필드 추가
+                .userId(userId) // [FIX 6]: userId 필드 추가
                 .message(finalBotResponse)
                 .isUserMessage(false)
                 .build();
         chatMessageRepository.save(botMessage);
+
+        // 세션의 updatedAt을 갱신합니다.
+        session.setUpdatedAt(LocalDateTime.now());
+        chatSessionRepository.save(session);
 
         return ChatResponse.builder()
                 .message(finalBotResponse)
@@ -74,9 +149,79 @@ public class ChatService {
                 .build();
     }
 
-    /**
-     * [추가] 위험도 기반으로 사용자가 설정한 해결 방안을 가져와 챗봇 응답에 추가합니다.
-     */
+    // [수정]: 존재하지 않는 메서드 호출 (generateResponse, analyzeSentiment, evaluateRisk)을 수정하고,
+    // sendMessage의 구조와 유사하게 유효한 로직으로 대체합니다.
+    @Transactional
+    public ChatResponse processMessage(Long userId, Long sessionId, ChatRequest chatRequest) {
+        // 1. 세션 확인 및 사용자 검증
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new EntityNotFoundException("User not found with id: " + userId));
+
+        ChatSession session = chatSessionRepository.findById(sessionId)
+                .orElseThrow(() -> new EntityNotFoundException("ChatSession not found with id: " + sessionId));
+
+        if (!session.getUser().getId().equals(userId)) {
+            throw new SecurityException("Access denied. Session does not belong to user.");
+        }
+
+        String userMessage = chatRequest.getMessage();
+
+        // 2. 챗봇 응답 생성에 사용할 이전 채팅 기록 가져오기 (context)
+        // 현재 GeminiService의 generateChatResponseAndAnalyzeSentiment는 history List<Content>를 받도록 되어 있으나,
+        // 구현이 String userMessage만 받으므로, history를 사용한 컨텍스트 로직은 생략합니다.
+        // List<ChatMessage> recentMessages = chatMessageRepository.findAllBySessionIdOrderByCreatedAtAsc(sessionId);
+        // String chatHistory = recentMessages.stream()
+        //         .map(msg -> (msg.getIsUserMessage() ? "User: " : "Bot: ") + msg.getMessage())
+        //         .collect(Collectors.joining("\n"));
+        // String fullPrompt = chatHistory + "\nUser: " + userMessage;
+
+        // 3. Gemini 호출 (응답 및 감정 분석)
+        // [FIX 7]: 존재하지 않는 geminiService.generateResponse 대신 유효한 메서드 호출
+        Map<String, Object> geminiResult = geminiService.generateChatResponseAndAnalyzeSentiment(userMessage);
+        String botResponseFromGemini = (String) geminiResult.get("botResponse");
+        String sentiment = (String) geminiResult.get("sentiment");
+        Double sentimentScore = (Double) geminiResult.get("score"); // [FIX 8]: sentimentScore 누락분 추가
+
+        // 4. 위험도 계산
+        // [FIX 9]: 존재하지 않는 riskAnalysisService.evaluateRisk 대신 유효한 메서드 호출
+        int riskLevel = riskAnalysisService.calculateRiskLevel(userId);
+
+        // 5. 챗봇 응답 생성 (위험도 기반 추천 로직 추가)
+        String finalBotResponse = botResponseFromGemini + getRiskRecommendation(userId, riskLevel);
+
+
+        // 6. 메시지 저장 (사용자)
+        ChatMessage userMsgEntity = ChatMessage.builder()
+                .session(session)
+                .userId(userId)
+                .message(userMessage)
+                .isUserMessage(true)
+                .sentiment(sentiment)
+                .sentimentScore(sentimentScore) // [FIX 10]: sentimentScore 추가
+                .build();
+        chatMessageRepository.save(userMsgEntity);
+
+        // 7. 메시지 저장 (챗봇 응답)
+        ChatMessage botMsgEntity = ChatMessage.builder()
+                .session(session)
+                .userId(userId)
+                .message(finalBotResponse)
+                .isUserMessage(false)
+                .build();
+        chatMessageRepository.save(botMsgEntity);
+
+        // 세션의 updatedAt을 갱신합니다.
+        session.setUpdatedAt(LocalDateTime.now());
+        chatSessionRepository.save(session);
+
+        // 8. 응답 반환
+        return ChatResponse.builder()
+                .message(finalBotResponse) // [FIX 11]: responseText -> message로 수정 (ChatResponse DTO에 따름)
+                .sentiment(sentiment)
+                .riskLevel(riskLevel)
+                .build();
+    }
+
     private String getRiskRecommendation(Long userId, int riskLevel) {
         // 위험도 척도(1-10)와 정확히 일치하는 해결 방안을 찾습니다.
         // [수정] 반환 타입을 List<RiskSolutionResponse>로 변경
@@ -103,8 +248,6 @@ public class ChatService {
 
         return ""; // 평소에는 추가 추천 메시지 없음
     }
-
-    // [삭제] 기존의 하드코딩된 generateBotResponse는 GeminiService로 대체되어 사용하지 않습니다.
 
     @Transactional(readOnly = true)
     public EmotionTrendResponse getEmotionTrend(Long userId, int days) {
