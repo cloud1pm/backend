@@ -14,7 +14,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
-import java.util.stream.Collectors; // 추가
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -39,10 +39,18 @@ public class UserService {
             throw new IllegalArgumentException("Initial setup solutions are required for sign-up");
         }
 
-        // 닉네임 자동 생성 (없을 때)
-        String name = Optional.ofNullable(request.getName())
+        // 닉네임 (mutable) 설정 (없을 때 이메일 접두사 사용)
+        String defaultId = request.getEmail().split("@")[0];
+
+        // 닉네임 (mutable) 설정 (없을 때 이메일 접두사 사용)
+        String nickname = Optional.ofNullable(request.getNickname()) // [수정] getName -> getNickname
                 .filter(n -> !n.isBlank())
                 .orElseGet(() -> request.getEmail().split("@")[0]);
+
+        // Username (immutable ID) 설정: 이메일 접두사를 기본값으로 사용
+        String username = Optional.ofNullable(request.getUsername()) // [수정] request.getUsername() 추가
+                .filter(u -> !u.isBlank())
+                .orElse(defaultId);
 
         // 기본 프로필 이미지 설정 (입력 없을 때)
         String profileImageUrl = Optional.ofNullable(request.getProfileImageUrl())
@@ -53,15 +61,16 @@ public class UserService {
         User user = User.builder()
                 .email(request.getEmail())
                 .password(passwordEncoder.encode(request.getPassword()))
-                .name(name)
+                .username(username)
+                .nickname(nickname)
                 .profileImageUrl(profileImageUrl)
-                .provider(null) // 일반 로그인
-                .providerId(null) // 일반 로그인
+                .provider(ProviderType.LOCAL.name()) // 일반 로그인
+                .providerType(ProviderType.LOCAL)
+                .providerId("") // 일반 로그인
                 .hasCompletedInitialSetup(true)
                 .build();
         userRepository.save(user);
 
-        // 위험도별 해결방안 저장 (단계 1~5 가정)
         request.getRiskSolutions().forEach(solution -> {
             if (solution.getRiskLevel() < 1 || solution.getRiskLevel() > 5) {
                 throw new IllegalArgumentException("Risk level must be between 1 and 5");
@@ -77,13 +86,13 @@ public class UserService {
         return UserProfileResponse.from(user);
     }
 
-    // [추가] 로그인
+    // 로그인
     public String signIn(SignInRequest request) {
-        User user = userRepository.findByEmail(request.getEmail())
-                .orElseThrow(() -> new EntityNotFoundException("Invalid email or password"));
+        User user = userRepository.findByUsername(request.getUsername()) // [수정] findByEmail -> findByUsername
+                .orElseThrow(() -> new EntityNotFoundException("Invalid username or password")); // [수정] email -> username
 
         if (user.getPassword() == null || !passwordEncoder.matches(request.getPassword(), user.getPassword())) {
-            throw new EntityNotFoundException("Invalid email or password");
+            throw new EntityNotFoundException("Invalid username or password"); // [수정] email -> username
         }
 
         // 로그인 성공 시 연속 출석 체크
@@ -94,7 +103,7 @@ public class UserService {
         return jwtUtil.generateToken(user.getId(), user.getEmail());
     }
 
-    // [수정] completeInitialSetup - 초기 설정 재설정/수정 기능으로 활용
+    // completeInitialSetup - 초기 설정 재설정/수정 기능으로 활용
     @Transactional
     public void saveOrUpdateRiskSolutions(Long userId, InitialSetupRequest request) {
         User user = userRepository.findById(userId)
@@ -119,7 +128,7 @@ public class UserService {
         userRepository.save(user);
     }
 
-    // [추가] 회원 정보 조회
+    // 회원 정보 조회
     @Transactional(readOnly = true)
     public UserProfileResponse getUserProfile(Long userId) {
         User user = userRepository.findById(userId)
@@ -127,15 +136,16 @@ public class UserService {
         return UserProfileResponse.from(user);
     }
 
-    // [추가] 회원 정보 수정 (닉네임, 사진)
+    // 회원 정보 수정 (닉네임, 사진): username은 수정 불가
     @Transactional
     public UserProfileResponse updateUserProfile(Long userId, UserUpdateRequest request) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new EntityNotFoundException("User not found with id: " + userId));
 
-        Optional.ofNullable(request.getName())
+        // 닉네임만 수정 가능
+        Optional.ofNullable(request.getNickname()) // [수정] getName -> getNickname
                 .filter(n -> !n.isBlank())
-                .ifPresent(user::updateName);
+                .ifPresent(user::updateNickname); // [수정] updateName -> updateNickname
 
         // null을 허용하면 기본 이미지로 업데이트
         String profileImageUrl = Optional.ofNullable(request.getProfileImageUrl())
@@ -200,7 +210,7 @@ public class UserService {
     }
 
     @Transactional(readOnly = true)
-    // [수정] 반환 타입을 List<RiskSolution>에서 List<RiskSolutionResponse>로 변경
+    // 반환 타입을 List<RiskSolution>에서 List<RiskSolutionResponse>로 변경
     public List<RiskSolutionResponse> getRiskSolutions(Long userId, Integer riskLevel) {
         List<RiskSolution> solutions;
         if (riskLevel != null) {
@@ -209,13 +219,13 @@ public class UserService {
             solutions = riskSolutionRepository.findByUserId(userId);
         }
 
-        // [추가] Entity를 DTO로 변환하여 반환
+        // Entity를 DTO로 변환하여 반환
         return solutions.stream()
                 .map(this::convertToRiskSolutionResponse)
                 .collect(Collectors.toList());
     }
 
-    // [추가] RiskSolution Entity를 RiskSolutionResponse DTO로 변환하는 private 메서드
+    // RiskSolution Entity를 RiskSolutionResponse DTO로 변환하는 private 메서드
     private RiskSolutionResponse convertToRiskSolutionResponse(RiskSolution solution) {
         return RiskSolutionResponse.builder()
                 .id(solution.getId())

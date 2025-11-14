@@ -26,25 +26,25 @@ class SignInResponse {
 @RequestMapping("/api/user")
 @RequiredArgsConstructor
 public class UserController {
-
     private final UserService userService;
 
-    // [추가] 회원 가입
+    // 회원 가입
     @PostMapping("/signup")
     public ResponseEntity<UserProfileResponse> signUp(@RequestBody SignUpRequest request) {
         UserProfileResponse response = userService.signUp(request);
         return ResponseEntity.ok(response);
     }
 
-    // [추가] 로그인
+    // 로그인: username을 받음
     @PostMapping("/login")
     public ResponseEntity<SignInResponse> signIn(@RequestBody SignInRequest request) {
         String jwtToken = userService.signIn(request);
         // 임시로 userId를 1L로 설정 (실제로는 토큰에서 파싱해야 함)
+        // 주의: 실제 환경에서는 토큰에서 userId를 안전하게 추출해야 합니다.
         return ResponseEntity.ok(SignInResponse.builder().token(jwtToken).userId(1L).build());
     }
 
-    // [추가] 회원 정보 조회 (GET /api/user)
+    // 회원 정보 조회 (GET /api/user)
     @GetMapping
     public ResponseEntity<UserProfileResponse> getUserProfile(Authentication authentication) {
         Long userId = (Long) authentication.getPrincipal();
@@ -52,7 +52,7 @@ public class UserController {
         return ResponseEntity.ok(response);
     }
 
-    // [추가] 회원 정보 수정 (닉네임, 사진)
+    // 회원 정보 수정 (닉네임, 사진)
     @PatchMapping
     public ResponseEntity<UserProfileResponse> updateUserProfile(
             Authentication authentication,
@@ -62,7 +62,7 @@ public class UserController {
         return ResponseEntity.ok(response);
     }
 
-    // [추가] 비밀번호 수정
+    // 비밀번호 수정
     @PatchMapping("/password")
     public ResponseEntity<Void> updatePassword(
             Authentication authentication,
@@ -72,7 +72,7 @@ public class UserController {
         return ResponseEntity.ok().build();
     }
 
-    // [추가] 회원 탈퇴
+    // 회원 탈퇴
     @DeleteMapping
     public ResponseEntity<Void> deleteUser(Authentication authentication) {
         Long userId = (Long) authentication.getPrincipal();
@@ -80,14 +80,13 @@ public class UserController {
         return ResponseEntity.noContent().build();
     }
 
-    // [수정] /api/user/initial-setup의 요소 수정 (단계별 해결 방법 수정) - PUT으로 재사용
-    // 기존 POST는 유지하고, PUT을 수정용으로 추가합니다.
+    // /api/user/initial-setup의 요소 수정 (단계별 해결 방법 수정)
     @PutMapping("/initial-setup")
     public ResponseEntity<Void> updateInitialSetup(
             Authentication authentication,
             @RequestBody InitialSetupRequest request) {
         Long userId = (Long) authentication.getPrincipal();
-        userService.completeInitialSetup(userId, request); // 기존 메서드를 재사용하여 수정
+        userService.completeInitialSetup(userId, request);
         return ResponseEntity.ok().build();
     }
 

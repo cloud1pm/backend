@@ -9,7 +9,7 @@ import java.time.LocalDateTime;
 public class UserProfileResponse {
     private Long id;
     private String email;
-    private String name;
+    private String nickname;
     private String profileImageUrl;
     private String provider;
     private Boolean hasCompletedInitialSetup;
@@ -20,7 +20,7 @@ public class UserProfileResponse {
         return UserProfileResponse.builder()
                 .id(user.getId())
                 .email(user.getEmail())
-                .name(user.getName())
+                .nickname(user.getNickname())
                 .profileImageUrl(user.getProfileImageUrl())
                 .provider(user.getProvider())
                 .hasCompletedInitialSetup(user.getHasCompletedInitialSetup())

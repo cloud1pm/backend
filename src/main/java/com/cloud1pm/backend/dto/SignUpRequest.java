@@ -10,7 +10,8 @@ import java.util.List;
 @Builder
 public class SignUpRequest {
     private String email;
-    private String name; // 닉네임 (선택 사항)
+    private String username;
+    private String nickname; // 닉네임 (선택 사항)
     private String password;
     private String confirmPassword;
     private String profileImageUrl; // 이미지 URL (선택 사항)
