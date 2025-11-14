@@ -35,7 +35,8 @@ public class OAuth2SuccessHandler extends SimpleUrlAuthenticationSuccessHandler 
                 .orElseGet(() -> {
                     User newUser = User.builder()
                             .email(email)
-                            .name(name)
+                            .username(name)
+                            .nickname(name)
                             .profileImageUrl(picture)
                             .provider("google")
                             .providerId(providerId)

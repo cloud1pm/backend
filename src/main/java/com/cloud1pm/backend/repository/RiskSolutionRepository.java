@@ -10,4 +10,5 @@ import java.util.List;
 public interface RiskSolutionRepository extends JpaRepository<RiskSolution, Long> {
     List<RiskSolution> findByUserIdAndRiskLevel(Long userId, Integer riskLevel);
     List<RiskSolution> findByUserId(Long userId);
+    void deleteByUserId(Long userId);
 }
