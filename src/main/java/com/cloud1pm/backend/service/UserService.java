@@ -363,15 +363,21 @@ public class UserService {
     }
 
     private int getRequiredRiceForLevel(int level) {
-        final int BASE_RICE = 1;
+        if (level <= 1) {
+            return 10; // 레벨 1은 10개로 시작
+        }
 
-        if (level <= 1) return BASE_RICE;
+        if (level <= 5) {
+            // 레벨 2~5
+            return 20 + (level - 1) * 5;
+        }
 
-        // 밥 요구량 증가 로직 (예시: 레벨이 높을수록 가파르게 증가)
-        if (level <= 5) return level * BASE_RICE;
-        if (level <= 10) return 5 + (level - 5) * 2;
-        if (level <= 20) return 15 + (level - 10) * 3;
+        if (level <= 10) {
+            // 레벨 6~10
+            return 40 + (level - 5) * 10;
+        }
 
-        return 45 + (level - 20) * 5;
+        // 최대 레벨(10)을 초과하는 경우
+        return 100;
     }
 }
