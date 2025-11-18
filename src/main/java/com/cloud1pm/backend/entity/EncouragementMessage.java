@@ -27,6 +27,9 @@ public class EncouragementMessage {
     @Column(nullable = false, columnDefinition = "TEXT")
     private String message;
 
+    @Column(nullable = false, length = 50)
+    private String emotion;
+
     @Column(nullable = false)
     private LocalDate date; // 작성 날짜
 

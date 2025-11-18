@@ -66,7 +66,7 @@ public class UserService {
                 .profileImageUrl(profileImageUrl)
                 .provider(ProviderType.LOCAL.name()) // 일반 로그인
                 .providerType(ProviderType.LOCAL)
-                .providerId("") // 일반 로그인
+                .providerId(username) // 일반 로그인
                 .hasCompletedInitialSetup(true)
                 .build();
         userRepository.save(user);
@@ -235,7 +235,7 @@ public class UserService {
     }
 
     @Transactional
-    public void createEncouragementMessage(Long userId, String message) {
+    public void createEncouragementMessage(Long userId, CreateEncouragementMessageRequest request) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new RuntimeException("User not found"));
 
@@ -248,7 +248,8 @@ public class UserService {
 
         EncouragementMessage encouragementMessage = EncouragementMessage.builder()
                 .user(user)
-                .message(message)
+                .message(request.getMessage())
+                .emotion(request.getEmotion())
                 .date(today)
                 .build();
         encouragementMessageRepository.save(encouragementMessage);
@@ -258,13 +259,17 @@ public class UserService {
         userRepository.save(user);
     }
 
-    // 응원 문구 전체 가져오기 (추가됨)
+    // 응원 문구 전체 가져오기
     @Transactional(readOnly = true)
-    public List<EncouragementMessage> getEncouragementMessages(Long userId) {
+    public List<EncouragementMessageResponse> getEncouragementMessages(Long userId) {
         if (!userRepository.existsById(userId)) {
             throw new RuntimeException("User not found");
         }
-        return encouragementMessageRepository.findByUserIdOrderByDateDesc(userId);
+
+        // 엔티티를 조회하고, 스트림을 통해 DTO로 변환하여 반환
+        return encouragementMessageRepository.findByUserIdOrderByDateDesc(userId).stream()
+                .map(EncouragementMessageResponse::from)
+                .collect(Collectors.toList());
     }
 
     @Transactional
