@@ -41,7 +41,9 @@ public class CustomOAuth2UserService implements OAuth2UserService<OAuth2UserRequ
         String email = (String) attributes.get("email");
         String name = (String) attributes.get("name");
 
-        User user = saveOrUpdate(email, name, ProviderType.GOOGLE);
+        String providerId = (String) attributes.get(userNameAttributeName);
+
+        User user = saveOrUpdate(email, name, registrationId, providerId, ProviderType.GOOGLE);
 
         // Spring Security가 인증 정보를 저장할 수 있도록 DefaultOAuth2User 객체를 반환합니다.
         // authorities는 User 엔티티의 Role을 사용해야 하지만, 현재 단계에서는 "ROLE_USER"를 기본으로 설정합니다.
@@ -53,9 +55,9 @@ public class CustomOAuth2UserService implements OAuth2UserService<OAuth2UserRequ
     }
 
     /**
-     * 사용자의 이메일과 ProviderType을 기반으로 DB에 저장하거나 업데이트합니다.
+     * 사용자의 이메일과 ProviderType을 기반으로 DB에 저장하거나 업데이트
      */
-    private User saveOrUpdate(String email, String name, ProviderType providerType) {
+    private User saveOrUpdate(String email, String name, String provider, String providerId, ProviderType providerType) {
         // 1. 기존 사용자를 이메일로 찾습니다.
         User user = userRepository.findByEmail(email)
                 .map(existingUser -> {
@@ -63,8 +65,6 @@ public class CustomOAuth2UserService implements OAuth2UserService<OAuth2UserRequ
                     if (existingUser.getProviderType() == providerType) {
                         return existingUser.updateOAuthInfo(name, email);
                     } else {
-                        // 이메일은 같지만 ProviderType이 다르면 (예: LOCAL과 GOOGLE),
-                        // 이는 보안상 문제될 수 있으므로 예외를 발생시키거나 로그인이 불가능하게 처리해야 합니다.
                         throw new IllegalArgumentException("이미 다른 방식으로 가입된 이메일입니다: " + providerType);
                     }
                 })
@@ -75,6 +75,8 @@ public class CustomOAuth2UserService implements OAuth2UserService<OAuth2UserRequ
                             .username(name)
                             .nickname(name) // 닉네임 초기값은 이름으로 설정
                             .providerType(providerType)
+                            .provider(provider)
+                            .providerId(providerId)
                             .password(null) // 소셜 로그인이므로 비밀번호는 null
                             .build());
                 });
