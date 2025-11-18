@@ -111,18 +111,20 @@ public class UserController {
     @PostMapping("/encouragement")
     public ResponseEntity<Void> createEncouragementMessage(
             Authentication authentication,
-            @RequestBody Map<String, String> request) {
+            // Map 대신 DTO를 직접 사용하도록 수정
+            @RequestBody CreateEncouragementMessageRequest request) {
         Long userId = (Long) authentication.getPrincipal();
-        userService.createEncouragementMessage(userId, request.get("message"));
+
+        userService.createEncouragementMessage(userId, request);
         return ResponseEntity.ok().build();
     }
 
     // 응원 문구 전체 가져오기
     @GetMapping("/encouragement")
-    public ResponseEntity<List<EncouragementMessage>> getAllEncouragementMessages(
-            Authentication authentication) {
+    public ResponseEntity<List<EncouragementMessageResponse>> getAllEncouragementMessages(
+                                                                                           Authentication authentication) {
         Long userId = (Long) authentication.getPrincipal();
-        List<EncouragementMessage> messages = userService.getEncouragementMessages(userId);
+        List<EncouragementMessageResponse> messages = userService.getEncouragementMessages(userId);
         return ResponseEntity.ok(messages);
     }
 
