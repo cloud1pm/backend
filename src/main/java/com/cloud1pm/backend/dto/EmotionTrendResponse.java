@@ -10,6 +10,7 @@ import java.util.List;
 @AllArgsConstructor
 @NoArgsConstructor
 public class EmotionTrendResponse {
+    private Double overallAverageRisk;
     private List<DailyEmotion> trends;
 
     @Getter
@@ -20,5 +21,6 @@ public class EmotionTrendResponse {
         private LocalDate date;
         private String sentiment;
         private Double averageScore;
+        private Integer averageRiskLevel;
     }
 }
