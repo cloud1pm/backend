@@ -47,18 +47,6 @@ public class ChatController {
         return ResponseEntity.ok(response);
     }
 
-    // 1. 새로운 채팅 세션 생성 (채팅 명 설정)
-    @PostMapping("/sessions")
-    // [수정]: @AuthenticationPrincipal UserDetails 대신 Authentication 사용
-    public ResponseEntity<ChatSessionResponse> createNewSession(
-            Authentication authentication,
-            @RequestBody(required = false) ChatSessionRequest request) {
-        Long userId = (Long) authentication.getPrincipal();
-        String title = (request != null && request.getTitle() != null) ? request.getTitle() : null;
-        ChatSessionResponse session = chatService.createNewSession(userId, title);
-        return ResponseEntity.ok(session);
-    }
-
     // 2. 사용자의 채팅 세션 목록 조회 (채팅 목록 보여주기)
     @GetMapping("/sessions")
     // [수정]: @AuthenticationPrincipal UserDetails 대신 Authentication 사용
@@ -92,11 +80,12 @@ public class ChatController {
 
     // 5. 특정 채팅 세션의 메시지 기록 조회 (채팅 들어가기)
     @GetMapping("/sessions/{sessionId}/messages")
-    public ResponseEntity<List<ChatMessageResponse>> getChatHistory(
+    public ResponseEntity<ChatHistoryResponse> getChatHistory(
             Authentication authentication,
             @PathVariable Long sessionId) {
         Long userId = (Long) authentication.getPrincipal();
-        List<ChatMessageResponse> history = chatService.getChatHistory(sessionId, userId);
+        // 반환 타입이 List<ChatMessageResponse>에서 ChatHistoryResponse로 변경됨
+        ChatHistoryResponse history = chatService.getChatHistory(sessionId, userId);
         return ResponseEntity.ok(history);
     }
 }
