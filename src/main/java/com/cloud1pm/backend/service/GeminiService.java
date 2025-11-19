@@ -51,13 +51,18 @@ public class GeminiService {
         String finalBotResponse = "";
 
         try {
-            // 1. 시스템 명령어 및 대화 기록 설정
+            // 1. 시스템 명령어 및 대화 기록 설정 (프롬프트 개선)
             String systemInstruction = "당신은 사용자에게 정서적 지지와 공감을 제공하는 따뜻하고 안전한 챗봇입니다. " +
                     "사용자의 기분을 분석하고, 그들의 말에 진심으로 공감하며 부드럽고 긍정적인 방향으로 대화를 이끌어주세요. " +
                     "절대 전문가처럼 진단하거나 조언하지 말고, 항상 듣고 지지하는 자세를 유지하세요. " +
-                    "그리고 사용자 메시지에 대해 한국어로 응답을 생성해주세요. " +
-                    "반드시 analyzeSentiment 함수를 호출하여 사용자의 감정을 분석한 결과를 제공한 다음, 그 결과와 공감 내용을 포함하는 최종 텍스트 응답을 생성하세요." +
-                    "**어떤 경우에도 최종 응답 텍스트를 비워두거나 누락해서는 안 됩니다. 응답 텍스트는 항상 사용자에게 전달될 구체적인 대화 내용이어야 합니다.**";;
+                    "그리고 사용자 메시지에 대해 한국어로 응답을 생성해주세요.\n\n" +
+                    "**필수 지침:**\n" +
+                    "1. 반드시 `analyzeSentiment` 함수를 호출하여 사용자의 감정을 분석해야 합니다.\n" +
+                    "2. `analyzeSentiment`의 파라미터 규칙:\n" +
+                    "   - `sentiment`: 반드시 'positive', 'negative', 'neutral' 중 하나여야 합니다. (복합적인 감정이라도 가장 주된 감정을 이 셋 중 하나로 분류하세요)\n" +
+                    "   - `score`: 감정의 긍정/부정 정도를 나타내는 -1.0 (매우 부정) ~ 1.0 (매우 긍정) 사이의 실수 값이어야 합니다. (예: 죽고 싶다 -> -0.9, 안녕 -> 0.1, 행복해 -> 0.8)\n" +
+                    "3. 함수 호출 결과와 공감 내용을 포함하여 최종 텍스트 응답을 생성하세요.\n" +
+                    "**어떤 경우에도 최종 응답 텍스트를 비워두거나 누락해서는 안 됩니다. 응답 텍스트는 항상 사용자에게 전달될 구체적인 대화 내용이어야 합니다.**";
 
             List<Content> history = new ArrayList<>();
             Content userContent = Content.builder()
@@ -116,7 +121,6 @@ public class GeminiService {
             // 5. Function Call 처리 (Step 2 준비)
             Optional<FunctionCall> funcCallOpt = firstPart.functionCall();
 
-            // **[수정된 로직]** FunctionCall의 존재와 이름을 명확하게 확인
             boolean isFunctionCall = funcCallOpt.isPresent() &&
                     funcCallOpt.get().name().orElse("").equals("analyzeSentiment");
 
@@ -173,16 +177,12 @@ public class GeminiService {
 
                 if (candidates2.isEmpty()) {
                     log.warn("Second API call returned empty candidate. Generating fallback empathetic response.");
-                    // 응답 누락 시 대체 로직 적용
                     finalBotResponse = generateEmpatheticFallback(userMessage, finalSentiment);
                 } else {
                     // 7. 최종 텍스트 응답 추출
                     finalBotResponse = extractTextFromResponse(response2);
-
-                    // **[디버깅 로그]** 추출된 텍스트 확인
                     log.info("Step 2 Extracted Text: '{}'", finalBotResponse);
 
-                    // 텍스트 추출은 되었으나 빈 문자열인 경우 대체 로직 적용
                     if (finalBotResponse.isEmpty()) {
                         log.warn("Step 2 response text extraction failed. Generating fallback empathetic response.");
                         finalBotResponse = generateEmpatheticFallback(userMessage, finalSentiment);
@@ -190,22 +190,19 @@ public class GeminiService {
                 }
 
             } else {
-                // **[이전 오류 경로]** 모델이 함수 호출을 건너뛰고 텍스트를 바로 반환한 경우
+                // 모델이 함수 호출을 건너뛰고 텍스트를 바로 반환한 경우
                 Optional<String> textOpt = firstPart.text();
                 finalBotResponse = textOpt.orElse("").trim();
 
                 log.warn("Model did not request function call, returning text only: {}", finalBotResponse);
 
-                // 텍스트가 비어있다면, 일반 폴백 메시지 사용 (시스템 지침 위반)
                 if (finalBotResponse.isEmpty()) {
                     log.warn("Model skipped function call and returned empty text. Using generic fallback.");
                     finalBotResponse = (String) getFallbackResponse().get("botResponse");
                 }
             }
 
-            // 최종 결과 반환
             Map<String, Object> finalResult = new HashMap<>();
-            // finalBotResponse가 빈 경우, 최후의 수단으로 일반 폴백 메시지 사용
             finalResult.put("botResponse", finalBotResponse.isEmpty() ? getFallbackResponse().get("botResponse") : finalBotResponse);
             finalResult.put("sentiment", finalSentiment);
             finalResult.put("score", finalScore);
@@ -221,19 +218,17 @@ public class GeminiService {
         }
     }
 
-    /**
-     * 최종 응답 텍스트 추출 실패 시, 감정 분석 결과를 바탕으로 공감 응답을 생성합니다.
-     */
+    // ... (나머지 메서드들은 기존과 동일)
+
     private String generateEmpatheticFallback(String userMessage, String sentiment) {
         String baseMessage;
         String lowerSentiment = sentiment.toLowerCase();
 
-        // 감정 기반 대체 메시지 생성
-        if (lowerSentiment.contains("sad") || lowerSentiment.contains("tired") || lowerSentiment.contains("disappoint")) {
+        if (lowerSentiment.contains("sad") || lowerSentiment.contains("tired") || lowerSentiment.contains("disappoint") || lowerSentiment.contains("negative")) {
             baseMessage = "많이 힘드셨군요. 제가 옆에서 이야기를 들어드릴게요.";
         } else if (lowerSentiment.contains("anger") || lowerSentiment.contains("frustration")) {
             baseMessage = "무슨 일 때문에 그렇게 화가 나셨나요? 괜찮아요, 여기에 다 털어놓으셔도 돼요.";
-        } else if (lowerSentiment.contains("joy") || lowerSentiment.contains("happy")) {
+        } else if (lowerSentiment.contains("joy") || lowerSentiment.contains("happy") || lowerSentiment.contains("positive")) {
             baseMessage = "정말 기쁜 일이 있으셨나 봐요! 저도 같이 축하해 드릴게요.";
         } else {
             baseMessage = "혹시 어떤 일이 있으셨나요? 괜찮다면 저에게 말씀해 주세요.";
@@ -242,25 +237,16 @@ public class GeminiService {
         return baseMessage + " 잠시 서비스에 문제가 있었지만, 지금은 다시 대화할 준비가 되었어요.";
     }
 
-    /**
-     * Gemini 응답에서 텍스트 부분을 추출합니다.
-     */
     private String extractTextFromResponse(GenerateContentResponse response) {
         StringBuilder builder = new StringBuilder();
         try {
             List<com.google.genai.types.Candidate> candidates = response.candidates().orElse(Collections.emptyList());
-
-            if (candidates.isEmpty()) {
-                return "";
-            }
+            if (candidates.isEmpty()) return "";
 
             Content content = candidates.get(0).content().orElse(null);
-            if (content == null) {
-                return "";
-            }
+            if (content == null) return "";
 
             List<Part> parts = content.parts().orElse(Collections.emptyList());
-
             for (Part p : parts) {
                 Optional<String> textOpt = p.text();
                 if (textOpt.isPresent() && !textOpt.get().isEmpty()) {
@@ -270,13 +256,9 @@ public class GeminiService {
         } catch (Exception e) {
             log.error("Error extracting text from response", e);
         }
-
         return builder.toString().trim();
     }
 
-    /**
-     * 오류 발생 시 기본 응답 반환
-     */
     private Map<String, Object> getFallbackResponse() {
         Map<String, Object> fallback = new HashMap<>();
         fallback.put("botResponse", "죄송합니다. 현재 챗봇 서비스에 문제가 발생했습니다. 잠시 후 다시 시도해 주세요.");
