@@ -26,23 +26,11 @@ public class OAuth2SuccessHandler extends SimpleUrlAuthenticationSuccessHandler 
                                         Authentication authentication) throws IOException {
         OAuth2User oAuth2User = (OAuth2User) authentication.getPrincipal();
 
+        // CustomOAuth2UserService에서 이미 저장했으므로 이메일로 조회
         String email = oAuth2User.getAttribute("email");
-        String name = oAuth2User.getAttribute("name");
-        String picture = oAuth2User.getAttribute("picture");
-        String providerId = oAuth2User.getAttribute("sub");
 
-        User user = userRepository.findByProviderAndProviderId("google", providerId)
-                .orElseGet(() -> {
-                    User newUser = User.builder()
-                            .email(email)
-                            .username(name)
-                            .nickname(name)
-                            .profileImageUrl(picture)
-                            .provider("google")
-                            .providerId(providerId)
-                            .build();
-                    return userRepository.save(newUser);
-                });
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new RuntimeException("User not found after OAuth2 login"));
 
         // 연속 출석 체크
         user.checkConsecutiveLogin();
@@ -50,6 +38,8 @@ public class OAuth2SuccessHandler extends SimpleUrlAuthenticationSuccessHandler 
 
         String token = jwtUtil.generateToken(user.getId(), user.getEmail());
 
+        // 프론트엔드로 리다이렉트 (토큰 전달)
+        // 프론트엔드는 이 토큰으로 /api/user/status를 호출하여 hasCompletedInitialSetup을 확인해야 함
         String targetUrl = UriComponentsBuilder.fromUriString("http://localhost:3000/oauth2/redirect")
                 .queryParam("token", token)
                 .build().toUriString();
