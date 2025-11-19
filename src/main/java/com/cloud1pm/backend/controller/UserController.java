@@ -129,8 +129,10 @@ public class UserController {
     }
 
     @PostMapping("/feed-character")
-    public ResponseEntity<FeedCharacterResponse> feedCharacter(@AuthenticationPrincipal UserDetails userDetails) {
-        Long userId = Long.parseLong(userDetails.getUsername());
+    public ResponseEntity<FeedCharacterResponse> feedCharacter(Authentication authentication) {
+        // SecurityContext에 저장된 principal(userId)을 Long으로 캐스팅하여 사용
+        Long userId = (Long) authentication.getPrincipal();
+
         FeedCharacterResponse response = userService.feedCharacter(userId);
         return ResponseEntity.ok(response);
     }
