@@ -264,33 +264,35 @@ public class UserService {
                 .collect(Collectors.toList());
     }
 
-    @Transactional
+      @Transactional
     public FeedCharacterResponse feedCharacter(Long userId) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new EntityNotFoundException("User not found with id: " + userId));
 
-        int currentLevel = user.getCharacterLevel();
-        int requiredRice = getRequiredRiceForLevel(currentLevel);
-        final int FEED_TO_LEVEL_UP = 5;
-
-        if (user.getRice() < requiredRice) {
+        if (user.getRice() < 1) {
             return FeedCharacterResponse.builder()
                     .newRiceCount(user.getRice())
-                    .newLevel(currentLevel)
-                    .message(String.format("밥이 부족합니다. 레벨 %d에서 필요한 밥은 %d개입니다. (보유: %d)", currentLevel, requiredRice, user.getRice()))
+                    .newLevel(user.getCharacterLevel())
+                    .message("밥이 부족합니다. 밥을 1개 이상 모아주세요!")
                     .build();
         }
 
-        user.setRice(user.getRice() - requiredRice);
+        int currentLevel = user.getCharacterLevel();
+        final int FEED_TO_LEVEL_UP = 5; 
+
+        user.setRice(user.getRice() - 1);
         user.setFeedCount(user.getFeedCount() + 1);
 
         String message;
+        
+
         if (user.getFeedCount() >= FEED_TO_LEVEL_UP) {
             user.setCharacterLevel(currentLevel + 1);
-            user.setFeedCount(0);
-            message = String.format("🎉 캐릭터가 레벨 %d로 성장했습니다! 레벨업 축하 메시지.", user.getCharacterLevel());
+            user.setFeedCount(0); 
+            message = String.format("🎉 축하합니다! 캐릭터가 레벨 %d로 성장했습니다!", user.getCharacterLevel());
         } else {
-            message = String.format("밥 %d개를 성공적으로 먹였습니다. 다음 레벨업까지 %d번 남았습니다.", requiredRice, FEED_TO_LEVEL_UP - user.getFeedCount());
+            int remaining = FEED_TO_LEVEL_UP - user.getFeedCount();
+            message = String.format("냠냠! 맛있게 먹었어요 😋 다음 레벨업까지 %d번 남았습니다.", remaining);
         }
 
         userRepository.save(user);
