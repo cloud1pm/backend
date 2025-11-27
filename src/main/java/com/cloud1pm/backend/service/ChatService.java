@@ -171,7 +171,12 @@ public class ChatService {
     }
 
     private String getRiskRecommendation(Long userId, int riskLevel) {
-        // (기존 코드와 동일)
+        // [수정] 위험도가 1~5인 경우(낮음~보통)에는 추천 로직을 수행하지 않고 빈 문자열 반환
+        if (riskLevel <= 5) {
+            return "";
+        }
+
+        // 위험도 6~10일 때만 저장된 해결 방안 조회
         List<RiskSolutionResponse> solutions = userService.getRiskSolutions(userId, riskLevel);
 
         if (!solutions.isEmpty()) {
@@ -179,6 +184,8 @@ public class ChatService {
             return "\n\n---\n⚠️ **위험도 알림: " + riskLevel + "/10**\n" +
                     "스스로 설정한 해결 방안: **\"" + rec + "\"**\n작은 것부터 시도해 보세요!";
         }
+
+        // 해결 방안이 없는데 고위험군(8 이상)인 경우
         if (riskLevel >= 8) {
             return "\n\n---\n⚠️ **위험도 알림: " + riskLevel + "/10**\n" +
                     "전문가의 도움이 필요할 때는 상담 센터에 연락해 보세요.";

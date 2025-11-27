@@ -135,7 +135,9 @@ public class GeminiService {
                 Map<String, Object> args = funcCall.args().orElse(Collections.emptyMap());
 
                 if (args.containsKey("sentiment") && args.get("sentiment") instanceof String) {
-                    finalSentiment = (String) args.get("sentiment");
+                    String rawSentiment = (String) args.get("sentiment");
+                    // 유효성 검사 및 예외 처리
+                    finalSentiment = validateSentiment(rawSentiment);
                 }
                 if (args.containsKey("score")) {
                     Object scoreObj = args.get("score");
@@ -205,7 +207,6 @@ public class GeminiService {
 
             // 최종 결과 반환
             Map<String, Object> finalResult = new HashMap<>();
-            // finalBotResponse가 빈 경우, 최후의 수단으로 일반 폴백 메시지 사용
             finalResult.put("botResponse", finalBotResponse.isEmpty() ? getFallbackResponse().get("botResponse") : finalBotResponse);
             finalResult.put("sentiment", finalSentiment);
             finalResult.put("score", finalScore);
@@ -219,6 +220,20 @@ public class GeminiService {
             log.error("Gemini API call workflow failed", e);
             return getFallbackResponse();
         }
+    }
+
+    // 감정 값 유효성 검사 메서드
+    private String validateSentiment(String sentiment) {
+        if (sentiment == null) return "neutral";
+
+        String lower = sentiment.trim().toLowerCase();
+        if (lower.equals("positive") || lower.equals("negative") || lower.equals("neutral")) {
+            return lower;
+        }
+
+        // 제한된 값 이외의 것이 들어오면 neutral로 처리하거나 로그 남김
+        log.warn("Invalid sentiment value received from AI: {}. Defaulting to 'neutral'.", sentiment);
+        return "neutral";
     }
 
     /**
