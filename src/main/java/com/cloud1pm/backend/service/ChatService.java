@@ -15,14 +15,14 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
 @Slf4j
 public class ChatService {
+
     private final ChatMessageRepository chatMessageRepository;
     private final UserRepository userRepository;
     private final RiskAnalysisService riskAnalysisService;
@@ -30,6 +30,9 @@ public class ChatService {
     private final UserService userService;
     private final ChatSessionRepository chatSessionRepository;
 
+    // -----------------------------
+    // 세션 생성
+    // -----------------------------
     @Transactional
     public ChatSessionResponse createNewSession(Long userId, String title) {
         User user = userRepository.findById(userId)
@@ -94,26 +97,25 @@ public class ChatService {
                 .collect(Collectors.toList());
     }
 
-    // [수정]: 세션이 없는 경우 새 세션을 생성하도록 로직 추가 및 필수 필드 누락 수정
+    // -----------------------------
+    // 메시지 처리
+    // -----------------------------
     @Transactional
     public ChatResponse sendMessage(Long userId, ChatRequest request) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new RuntimeException("User not found"));
 
-        // [FIX 2]: SessionId가 없으므로, 새 세션을 생성하여 사용합니다.
         ChatSession newSession = ChatSession.builder()
                 .user(user)
-                .title(request.getMessage().substring(0, Math.min(request.getMessage().length(), 20))) // 메시지 앞부분으로 세션명 지정
+                .title(request.getMessage().substring(0, Math.min(request.getMessage().length(), 20)))
                 .build();
         ChatSession session = chatSessionRepository.save(newSession);
 
-        // 1. Gemini를 사용하여 챗봇 응답 및 감정 분석
         Map<String, Object> geminiResult = geminiService.generateChatResponseAndAnalyzeSentiment(request.getMessage());
         String botResponseFromGemini = (String) geminiResult.get("botResponse");
         String sentiment = (String) geminiResult.get("sentiment");
         Double sentimentScore = (Double) geminiResult.get("score");
 
-        // 사용자 메시지 저장
         ChatMessage userMessage = ChatMessage.builder()
                 .session(session)
                 .userId(userId)
@@ -124,10 +126,8 @@ public class ChatService {
                 .build();
         chatMessageRepository.save(userMessage);
 
-        // 2. 위험도 계산 (기존 로직 유지)
         int riskLevel = riskAnalysisService.calculateRiskLevel(userId);
 
-        // 3. 챗봇 응답 생성 (위험도 기반 추천 로직 추가)
         String finalBotResponse = botResponseFromGemini + getRiskRecommendation(userId, riskLevel);
 
         ChatMessage botMessage = ChatMessage.builder()
@@ -138,7 +138,6 @@ public class ChatService {
                 .build();
         chatMessageRepository.save(botMessage);
 
-        // 세션의 updatedAt을 갱신합니다.
         session.setUpdatedAt(LocalDateTime.now());
         chatSessionRepository.save(session);
 
@@ -151,7 +150,6 @@ public class ChatService {
 
     @Transactional
     public ChatResponse processMessage(Long userId, Long sessionId, ChatRequest chatRequest) {
-        // 1. 세션 확인 및 사용자 검증
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new EntityNotFoundException("User not found with id: " + userId));
 
@@ -159,24 +157,19 @@ public class ChatService {
                 .orElseThrow(() -> new EntityNotFoundException("ChatSession not found with id: " + sessionId));
 
         if (!session.getUser().getId().equals(userId)) {
-            throw new SecurityException("Access denied. Session does not belong to user.");
+            throw new SecurityException("Access denied.");
         }
 
         String userMessage = chatRequest.getMessage();
-
         Map<String, Object> geminiResult = geminiService.generateChatResponseAndAnalyzeSentiment(userMessage);
-        String botResponseFromGemini = (String) geminiResult.get("botResponse");
+
+        String botResponse = (String) geminiResult.get("botResponse");
         String sentiment = (String) geminiResult.get("sentiment");
         Double sentimentScore = (Double) geminiResult.get("score");
 
-        // 4. 위험도 계산
         int riskLevel = riskAnalysisService.calculateRiskLevel(userId);
+        String finalBotResponse = botResponse + getRiskRecommendation(userId, riskLevel);
 
-        // 5. 챗봇 응답 생성 (위험도 기반 추천 로직 추가)
-        String finalBotResponse = botResponseFromGemini + getRiskRecommendation(userId, riskLevel);
-
-
-        // 6. 메시지 저장 (사용자)
         ChatMessage userMsgEntity = ChatMessage.builder()
                 .session(session)
                 .userId(userId)
@@ -187,7 +180,6 @@ public class ChatService {
                 .build();
         chatMessageRepository.save(userMsgEntity);
 
-        // 7. 메시지 저장 (챗봇 응답)
         ChatMessage botMsgEntity = ChatMessage.builder()
                 .session(session)
                 .userId(userId)
@@ -196,11 +188,9 @@ public class ChatService {
                 .build();
         chatMessageRepository.save(botMsgEntity);
 
-        // 세션의 updatedAt을 갱신합니다.
         session.setUpdatedAt(LocalDateTime.now());
         chatSessionRepository.save(session);
 
-        // 8. 응답 반환
         return ChatResponse.builder()
                 .message(finalBotResponse)
                 .sentiment(sentiment)
@@ -208,53 +198,75 @@ public class ChatService {
                 .build();
     }
 
+    // -----------------------------
+    // 위험도 추천 메시지
+    // -----------------------------
     private String getRiskRecommendation(Long userId, int riskLevel) {
-        // 위험도 척도(1-10)와 정확히 일치하는 해결 방안을 찾습니다.
         List<RiskSolutionResponse> solutions = userService.getRiskSolutions(userId, riskLevel);
 
         if (!solutions.isEmpty()) {
-            // 해당 위험도에 대한 사용자가 설정한 해결 방안을 응답에 추가합니다.
-            String recommendation = solutions.get(0).getSolution(); // 첫 번째 솔루션 사용
-            return "\n\n" +
-                    "---" + "\n" +
-                    "⚠️ **위험도 알림: " + riskLevel + "/10**\n" +
-                    "이 정도의 힘든 상황에서 당신이 스스로 설정한 해결 방안은: \n" +
-                    "**\"" + recommendation + "\"**\n" +
-                    "작은 것부터 시도해 보는 건 어떨까요? 힘내요!";
+            String rec = solutions.get(0).getSolution();
+            return "\n\n---\n⚠️ **위험도 알림: " + riskLevel + "/10**\n" +
+                    "이 정도의 힘든 상황에서 당신이 스스로 설정한 해결 방안은:\n" +
+                    "**\"" + rec + "\"**\n작은 것부터 시도해 보는 건 어떨까요? 힘내요!";
         }
 
-        // 위험도가 높지만 설정된 솔루션이 없을 경우 일반적인 안내
         if (riskLevel >= 8) {
-            return "\n\n" +
-                    "---" + "\n" +
-                    "⚠️ **위험도 알림: " + riskLevel + "/10**\n" +
-                    "지금 많이 힘드시군요. 전문가의 도움이 필요하다고 느낄 때는 언제든 상담 센터에 연락해 보세요. 제가 옆에서 응원할게요.";
+            return "\n\n---\n⚠️ **위험도 알림: " + riskLevel + "/10**\n" +
+                    "지금 많이 힘드시군요. 전문가의 도움이 필요할 때는 상담 센터에 연락해 보세요.";
         }
 
-        return ""; // 평소에는 추가 추천 메시지 없음
+        return "";
     }
 
-    /**
-     * 감정 점수(Sentiment Score, -1.0 ~ 1.0)를 감정 위험도(1 ~ 10)로 변환
-     * 점수가 낮을수록(부정적일수록) 위험도가 높아짐
-     * (1~5: 긍정, 6~10: 위험)
-     * @param sentimentScore 감정 점수 (-1.0 ~ 1.0)
-     * @return 감정 위험도 (1 ~ 10)
-     */
-    private Integer mapSentimentScoreToRiskLevel(Double sentimentScore) {
-        if (sentimentScore == null) return 1;
+    // -----------------------------
+    // 기존 문자열 기반 점수 변환 (수정 없음)
+    // -----------------------------
+    private double convertSentimentToScore(String sentiment) {
+        if (sentiment == null) return 0;
 
-        // 변환 공식: -1.0 -> 10, 1.0 -> 1. 공식: risk = 5.5 - 4.5 * score
-        double risk = 1 + (1.0 - sentimentScore) * 4.5;
+        String s = sentiment.toLowerCase().trim();
 
-        // 결과는 1에서 10 사이의 정수로 반올림하여 반환합니다.
-        return (int) Math.round(Math.max(1, Math.min(10, risk)));
+        switch (s) {
+            case "positive":
+            case "긍정":
+                return 1.0;
+
+            case "negative":
+            case "부정":
+                return -1.0;
+
+            case "neutral":
+            case "중립":
+                return 0.0;
+
+            default:
+                return 0.0;
+        }
     }
 
+    // -----------------------------
+    // ★ 추가된 부분: 문자열 + Gemini 점수 결합
+    // -----------------------------
+    private double convertSentimentToFinalScore(String sentiment, Double geminiScore) {
+
+        double dir = convertSentimentToScore(sentiment);   // 기존 방식(방향)
+        double raw = (geminiScore != null) ? geminiScore : 0.0;  // Gemini의 강도 값
+
+        // 문자열 70%, Gemini 점수 30% 비율로 합산
+        return dir * 0.7 + raw * 0.3;
+    }
+
+    // -----------------------------
+    // Emotion Trend 계산
+    // -----------------------------
     @Transactional(readOnly = true)
     public EmotionTrendResponse getEmotionTrend(Long userId, int days) {
+
         LocalDateTime startDate = LocalDateTime.now().minusDays(days);
-        List<ChatMessage> messages = chatMessageRepository.findRecentMessages(userId, startDate);
+
+        List<ChatMessage> messages =
+                chatMessageRepository.findUserMessagesForEmotionTrend(userId, startDate);
 
         Map<LocalDate, List<ChatMessage>> groupedByDate = messages.stream()
                 .filter(m -> m.getIsUserMessage() && m.getSentiment() != null)
@@ -262,26 +274,27 @@ public class ChatService {
 
         List<EmotionTrendResponse.DailyEmotion> dailyEmotions = groupedByDate.entrySet().stream()
                 .map(entry -> {
+
+                    // 변경된 부분: avg 계산에 convertSentimentToFinalScore 사용
                     double avgScore = entry.getValue().stream()
-                            .mapToDouble(ChatMessage::getSentimentScore)
+                            .mapToDouble(m -> convertSentimentToFinalScore(
+                                    m.getSentiment(),
+                                    m.getSentimentScore()
+                            ))
                             .average()
                             .orElse(0.0);
 
                     String dominantSentiment;
-                    if (avgScore > 0.1) { // 0.1 초과: 긍정
-                        dominantSentiment = "positive";
-                    } else if (avgScore < -0.1) { // -0.1 미만: 부정
-                        dominantSentiment = "negative";
-                    } else { // -0.1 ~ 0.1: 중립
-                        dominantSentiment = "neutral";
-                    }
+                    if (avgScore > 0.1) dominantSentiment = "positive";
+                    else if (avgScore < -0.1) dominantSentiment = "negative";
+                    else dominantSentiment = "neutral";
 
                     Integer avgRiskLevel = mapSentimentScoreToRiskLevel(avgScore);
 
                     return new EmotionTrendResponse.DailyEmotion(
                             entry.getKey(), dominantSentiment, avgScore, avgRiskLevel);
                 })
-                .sorted((a, b) -> a.getDate().compareTo(b.getDate()))
+                .sorted(Comparator.comparing(EmotionTrendResponse.DailyEmotion::getDate))
                 .collect(Collectors.toList());
 
         Double overallAverageRisk = dailyEmotions.stream()
@@ -289,9 +302,19 @@ public class ChatService {
                 .average()
                 .orElse(0.0);
 
-        // 종합 평균 위험도는 소수점 첫째 자리에서 반올림하여 정수 형태로 반환
-        Double finalOverallAverageRisk = (double) Math.round(overallAverageRisk);
+        Double finalOverallRisk = (double) Math.round(overallAverageRisk);
 
-        return new EmotionTrendResponse(finalOverallAverageRisk, dailyEmotions);
+        return new EmotionTrendResponse(finalOverallRisk, dailyEmotions);
+    }
+
+    // -----------------------------
+    // 기존 위험도 변환 (수정 없음)
+    // -----------------------------
+    private Integer mapSentimentScoreToRiskLevel(Double score) {
+        if (score == null) return 1;
+
+        double risk = 1 + (1.0 - score) * 4.5;
+
+        return (int) Math.round(Math.max(1, Math.min(10, risk)));
     }
 }

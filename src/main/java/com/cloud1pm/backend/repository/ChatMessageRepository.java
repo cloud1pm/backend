@@ -22,4 +22,15 @@ public interface ChatMessageRepository extends JpaRepository<ChatMessage, Long> 
             "AND c.createdAt >= :startDate ORDER BY c.createdAt DESC")
     List<ChatMessage> findUserMessagesForRiskAnalysis(@Param("userId") Long userId,
                                                       @Param("startDate") LocalDateTime startDate);
-}
+
+    @Query("SELECT c FROM ChatMessage c " +
+       "WHERE c.userId = :userId " +
+       "AND c.isUserMessage = true " +
+       "AND c.sentiment IS NOT NULL " +
+       "AND c.createdAt >= :startDate " +
+       "ORDER BY c.createdAt ASC")
+                List<ChatMessage> findUserMessagesForEmotionTrend(
+        @Param("userId") Long userId,
+        @Param("startDate") LocalDateTime startDate);
+
+                                                }
