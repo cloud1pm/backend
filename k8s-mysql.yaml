@@ -1,0 +1,193 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mysql-init-scripts
+data:
+  init.sql: |
+    -- MySQL 데이터베이스 생성
+    CREATE DATABASE IF NOT EXISTS cloud1pm
+        CHARACTER SET utf8mb4
+        COLLATE utf8mb4_unicode_ci;
+
+    USE cloud1pm;
+
+    -- 사용자 테이블
+    CREATE TABLE IF NOT EXISTS users (
+        id BIGINT PRIMARY KEY AUTO_INCREMENT,
+        email VARCHAR(255) NOT NULL UNIQUE,
+        password VARCHAR(255),
+        nickname VARCHAR(50) NOT NULL,
+        username VARCHAR(255),
+        profile_image_url VARCHAR(500),
+        provider VARCHAR(50) NOT NULL,
+        provider_id VARCHAR(255) NOT NULL UNIQUE,
+        rice INT NOT NULL DEFAULT 0,
+        character_level INT NOT NULL DEFAULT 1,
+        feed_count INT NOT NULL DEFAULT 0,
+        consecutive_days INT NOT NULL DEFAULT 0,
+        last_login_date DATE,
+        has_completed_initial_setup BOOLEAN NOT NULL DEFAULT FALSE,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        UNIQUE KEY uk_username (username),
+        INDEX idx_email (email),
+        INDEX idx_provider (provider, provider_id)
+    );
+
+    -- 위험도별 해결방안 테이블
+    CREATE TABLE IF NOT EXISTS risk_solutions (
+        id BIGINT PRIMARY KEY AUTO_INCREMENT,
+        user_id BIGINT NOT NULL,
+        risk_level INT NOT NULL,
+        solution TEXT NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+        INDEX idx_user_risk (user_id, risk_level)
+    );
+
+    -- 채팅 세션 테이블
+    CREATE TABLE IF NOT EXISTS chat_sessions (
+        id BIGINT PRIMARY KEY AUTO_INCREMENT,
+        user_id BIGINT NOT NULL,
+        title VARCHAR(255) NOT NULL DEFAULT '새로운 채팅',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+        INDEX idx_user_updated (user_id, updated_at)
+    );
+
+    -- 채팅 메시지 테이블
+    CREATE TABLE IF NOT EXISTS chat_messages (
+        id BIGINT PRIMARY KEY AUTO_INCREMENT,
+        user_id BIGINT NOT NULL,
+        session_id BIGINT NOT NULL,
+        message TEXT NOT NULL,
+        is_user_message BOOLEAN NOT NULL,
+        sentiment VARCHAR(20),
+        sentiment_score DOUBLE,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+        FOREIGN KEY (session_id) REFERENCES chat_sessions(id) ON DELETE CASCADE,
+        INDEX idx_session_created (session_id, created_at),
+        INDEX idx_sentiment (user_id, sentiment, created_at)
+    );
+
+    -- 게시글 테이블
+    CREATE TABLE IF NOT EXISTS posts (
+        id BIGINT PRIMARY KEY AUTO_INCREMENT,
+        user_id BIGINT NOT NULL,
+        title VARCHAR(255) NOT NULL,
+        content TEXT NOT NULL,
+        like_count INT NOT NULL DEFAULT 0,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+        INDEX idx_created (created_at)
+    );
+
+    -- 댓글 테이블
+    CREATE TABLE IF NOT EXISTS comments (
+        id BIGINT PRIMARY KEY AUTO_INCREMENT,
+        post_id BIGINT NOT NULL,
+        user_id BIGINT NOT NULL,
+        content TEXT NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (post_id) REFERENCES posts(id) ON DELETE CASCADE,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+        INDEX idx_post_created (post_id, created_at)
+    );
+
+    -- 게시글 좋아요 테이블
+    CREATE TABLE IF NOT EXISTS post_likes (
+        id BIGINT PRIMARY KEY AUTO_INCREMENT,
+        post_id BIGINT NOT NULL,
+        user_id BIGINT NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (post_id) REFERENCES posts(id) ON DELETE CASCADE,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+        UNIQUE KEY unique_post_user (post_id, user_id),
+        INDEX idx_user_created (user_id, created_at)
+    );
+
+    -- 응원 메시지 테이블
+    CREATE TABLE IF NOT EXISTS encouragement_messages (
+        id BIGINT PRIMARY KEY AUTO_INCREMENT,
+        user_id BIGINT NOT NULL,
+        message TEXT NOT NULL,
+        emotion VARCHAR(50) NOT NULL,
+        date DATE NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+        INDEX idx_user_date (user_id, date),
+        UNIQUE KEY unique_user_date (user_id, date)
+    );
+    
+    -- 알림 설정 테이블 (추가됨)
+    CREATE TABLE IF NOT EXISTS alert_settings (
+        id BIGINT PRIMARY KEY AUTO_INCREMENT,
+        user_id BIGINT NOT NULL,
+        alert_time TIME,
+        is_enabled BOOLEAN DEFAULT TRUE,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+        UNIQUE KEY unique_user_alert (user_id)
+    );
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mysql-service
+spec:
+  ports:
+    - port: 3306
+  selector:
+    app: mysql
+  clusterIP: None # Headless Service (StatefulSet용)
+
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: mysql
+spec:
+  selector:
+    matchLabels:
+      app: mysql
+  serviceName: mysql-service
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: mysql
+    spec:
+      containers:
+        - name: mysql
+          image: mysql:8.0
+          env:
+            - name: MYSQL_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: db-secret
+                  key: password
+            - name: MYSQL_DATABASE
+              value: cloud1pm
+          ports:
+            - containerPort: 3306
+              name: mysql
+          volumeMounts:
+            - name: mysql-persistent-storage
+              mountPath: /var/lib/mysql
+            - name: mysql-init-scripts
+              mountPath: /docker-entrypoint-initdb.d
+      volumes:
+        - name: mysql-init-scripts
+          configMap:
+            name: mysql-init-scripts
+  volumeClaimTemplates:
+    - metadata:
+        name: mysql-persistent-storage
+      spec:
+        accessModes: [ "ReadWriteOnce" ]
+        resources:
+          requests:
+            storage: 1Gi

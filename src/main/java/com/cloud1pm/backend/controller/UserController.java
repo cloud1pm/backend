@@ -8,6 +8,7 @@ import com.cloud1pm.backend.service.UserService;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.annotation.Profile;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -27,6 +28,7 @@ class SignInResponse {
 @RestController
 @RequestMapping("/api/user")
 @RequiredArgsConstructor
+@Profile("backend")
 public class UserController {
     
     

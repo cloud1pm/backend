@@ -1,0 +1,28 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: weekly-report-job
+spec:
+  schedule: "0 0 * * 1" # 매주 월요일 0시 0분 실행
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+            - name: report-job
+              image: your-docker-repo/cloud1pm-backend:latest
+              env:
+                - name: SPRING_PROFILES_ACTIVE
+                  value: "batch"
+                - name: JOB_NAME
+                  value: "REPORT" # 보고서 로직 실행
+                - name: SPRING_MAIN_WEB_APPLICATION_TYPE
+                  value: "none"
+                - name: SPRING_DATASOURCE_URL
+                  value: "jdbc:mysql://mysql-service:3306/cloud1pm?serverTimezone=UTC&characterEncoding=UTF-8"
+                - name: DB_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: db-secret
+                      key: password
+          restartPolicy: OnFailure

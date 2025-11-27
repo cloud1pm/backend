@@ -1,0 +1,32 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: alarm-job
+spec:
+  schedule: "*/1 * * * *" # 1분마다 실행
+  concurrencyPolicy: Forbid # 이전 작업이 안 끝났으면 건너뜀 (중복 방지)
+  successfulJobsHistoryLimit: 1 # 성공 기록 1개만 유지 (스토리지 절약)
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+            - name: alarm-job
+              image: your-docker-repo/cloud1pm-backend:latest
+              imagePullPolicy: Always
+              env:
+                - name: SPRING_PROFILES_ACTIVE
+                  value: "batch" # BatchJobRunner 활성화
+                - name: JOB_NAME
+                  value: "ALARM" # 알림 로직 실행
+                - name: SPRING_MAIN_WEB_APPLICATION_TYPE
+                  value: "none" # 웹 서버 비활성화 (필수)
+                - name: SPRING_DATASOURCE_URL
+                  value: "jdbc:mysql://mysql-service:3306/cloud1pm?serverTimezone=UTC&characterEncoding=UTF-8"
+                - name: DB_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: db-secret
+                      key: password
+          restartPolicy: OnFailure # 실패 시 재시도

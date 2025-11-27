@@ -3,6 +3,7 @@ package com.cloud1pm.backend.controller;
 import com.cloud1pm.backend.dto.*;
 import com.cloud1pm.backend.service.ChatService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.annotation.Profile;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -14,6 +15,7 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/chat")
 @RequiredArgsConstructor
+@Profile("backend")
 public class ChatController {
 
     private final ChatService chatService;

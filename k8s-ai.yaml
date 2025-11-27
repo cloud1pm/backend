@@ -1,0 +1,45 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ai-analysis-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ai-analysis
+  template:
+    metadata:
+      labels:
+        app: ai-analysis
+    spec:
+      containers:
+        - name: ai-analysis
+          image: your-docker-repo/cloud1pm-backend:latest
+          env:
+            - name: SPRING_PROFILES_ACTIVE
+              value: "ai" # AI 관련 빈만 활성화하거나 컨트롤러 로직 수행
+            - name: GEMINI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: api-secrets
+                  key: gemini-key
+          resources:
+            requests:
+              cpu: "500m"
+            limits:
+              cpu: "1000m"
+          ports:
+            - containerPort: 8080
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ai-analysis-service
+spec:
+  type: ClusterIP
+  selector:
+    app: ai-analysis
+  ports:
+    - port: 80
+      targetPort: 8080
+      protocol: TCP
