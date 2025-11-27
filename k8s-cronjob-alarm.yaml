@@ -29,4 +29,14 @@ spec:
                     secretKeyRef:
                       name: db-secret
                       key: password
+                - name: GEMINI_API_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: api-secrets
+                      key: gemini-key
+                - name: JWT_SECRET
+                  valueFrom:
+                    secretKeyRef:
+                      name: api-secrets
+                      key: jwt-secret
           restartPolicy: OnFailure # 실패 시 재시도

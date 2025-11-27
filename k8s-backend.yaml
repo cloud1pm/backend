@@ -18,7 +18,6 @@ spec:
           env:
             - name: SPRING_PROFILES_ACTIVE
               value: "backend"
-            # [수정] Service 포트인 80으로 변경 (또는 포트 생략)
             - name: AI_SERVICE_URL
               value: "http://ai-analysis-service"
             - name: SPRING_DATASOURCE_URL
@@ -28,13 +27,16 @@ spec:
                 secretKeyRef:
                   name: db-secret
                   key: password
-            # [추가] JWT Secret을 환경변수로 주입 (k8s secret 생성 필요)
             - name: JWT_SECRET
               valueFrom:
                 secretKeyRef:
-                  name: api-secrets  # 기존 api-secrets에 jwt-secret 키를 추가했다고 가정
+                  name: api-secrets
                   key: jwt-secret
-            # [추가] CORS 허용 도메인 설정 (Ingress 주소 등)
+            - name: GEMINI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: api-secrets
+                  key: gemini-key
             - name: CORS_ALLOWED_ORIGINS
               value: "http://localhost:3000,http://your-ingress-domain.com"
           ports:

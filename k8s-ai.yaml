@@ -17,12 +17,24 @@ spec:
           image: your-docker-repo/cloud1pm-backend:latest
           env:
             - name: SPRING_PROFILES_ACTIVE
-              value: "ai" # AI 관련 빈만 활성화하거나 컨트롤러 로직 수행
+              value: "ai"
             - name: GEMINI_API_KEY
               valueFrom:
                 secretKeyRef:
                   name: api-secrets
                   key: gemini-key
+            - name: SPRING_DATASOURCE_URL
+              value: "jdbc:mysql://mysql-service:3306/cloud1pm?serverTimezone=UTC&characterEncoding=UTF-8"
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: db-secret
+                  key: password
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: api-secrets
+                  key: jwt-secret
           resources:
             requests:
               cpu: "500m"
