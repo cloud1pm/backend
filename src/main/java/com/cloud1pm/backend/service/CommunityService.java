@@ -32,6 +32,9 @@ public class CommunityService {
 
         Post savedPost = postRepository.save(post);
 
+        // 밥 획득 (추가됨)
+        userService.addRiceForPost(userId);
+
         return convertToPostResponse(savedPost, userId);
     }
 
@@ -68,7 +71,7 @@ public class CommunityService {
                 .build();
     }
 
-    // 게시물 수정 (추가됨)
+    // 게시물 수정
     @Transactional
     public PostResponse updatePost(Long postId, Long userId, CreatePostRequest request) {
         Post post = postRepository.findById(postId)
@@ -85,7 +88,7 @@ public class CommunityService {
         return convertToPostResponse(updatedPost, userId);
     }
 
-    // 게시물 삭제 (추가됨)
+    // 게시물 삭제
     @Transactional
     public void deletePost(Long postId, Long userId) {
         Post post = postRepository.findById(postId)
@@ -95,7 +98,6 @@ public class CommunityService {
             throw new RuntimeException("Unauthorized: Only the author can delete the post.");
         }
 
-        // JPA Cascade 설정이 되어 있다고 가정하고 Post만 삭제
         postRepository.delete(post);
     }
 
@@ -121,7 +123,7 @@ public class CommunityService {
         return convertToCommentResponse(savedComment);
     }
 
-    // 댓글 삭제 (추가됨)
+    // 댓글 삭제
     @Transactional
     public void deleteComment(Long commentId, Long userId) {
         Comment comment = commentRepository.findById(commentId)
@@ -166,7 +168,7 @@ public class CommunityService {
         postRepository.save(post);
     }
 
-    // 좋아요 개수 가져오기 (추가됨)
+    // 좋아요 개수 가져오기
     @Transactional(readOnly = true)
     public int getLikeCount(Long postId) {
         Post post = postRepository.findById(postId)
@@ -205,7 +207,7 @@ public class CommunityService {
         List<Post> posts = postRepository.findAllByUserIdOrderByCreatedAtDesc(userId);
 
         return posts.stream()
-                .map(post -> convertToPostResponse(post, userId)) // fromEntity 대신 기존 메서드 사용
+                .map(post -> convertToPostResponse(post, userId))
                 .collect(Collectors.toList());
     }
 }

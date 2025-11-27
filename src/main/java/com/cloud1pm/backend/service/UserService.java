@@ -24,6 +24,7 @@ public class UserService {
     private final EncouragementMessageRepository encouragementMessageRepository;
     private final CommentRepository commentRepository;
     private final PostLikeRepository postLikeRepository;
+    private final PostRepository postRepository; // [추가됨] 게시물 카운트를 위해 주입
     private final PasswordEncoder passwordEncoder;
     private final JwtUtil jwtUtil;
 
@@ -36,15 +37,12 @@ public class UserService {
             throw new IllegalArgumentException("Password and confirm password do not match");
         }
 
-        // riskSolutions가 있으면 true, 없으면 false (나중에 설정)
         boolean hasInitialSetup = request.getRiskSolutions() != null && !request.getRiskSolutions().isEmpty();
 
-        // 닉네임 설정 (없을 때 이메일 접두사 사용)
         String nickname = Optional.ofNullable(request.getNickname())
                 .filter(n -> !n.isBlank())
                 .orElseGet(() -> request.getEmail().split("@")[0]);
 
-        // Username 설정
         String defaultId = request.getEmail().split("@")[0];
         String username = Optional.ofNullable(request.getUsername())
                 .filter(u -> !u.isBlank())
@@ -54,7 +52,6 @@ public class UserService {
                 .filter(url -> !url.isBlank())
                 .orElse(User.DEFAULT_PROFILE_IMAGE_URL);
 
-        // User 엔티티 생성
         User user = User.builder()
                 .email(request.getEmail())
                 .password(passwordEncoder.encode(request.getPassword()))
@@ -64,11 +61,10 @@ public class UserService {
                 .provider(ProviderType.LOCAL.name())
                 .providerType(ProviderType.LOCAL)
                 .providerId(username)
-                .hasCompletedInitialSetup(hasInitialSetup) // 초기 설정 여부 반영
+                .hasCompletedInitialSetup(hasInitialSetup)
                 .build();
         userRepository.save(user);
 
-        // 초기 설정(위험도 해결방안)이 포함된 경우 저장
         if (hasInitialSetup) {
             request.getRiskSolutions().forEach(solution -> {
                 if (solution.getRiskLevel() < 1 || solution.getRiskLevel() > 5) {
@@ -91,11 +87,8 @@ public class UserService {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new RuntimeException("User not found"));
 
-        // 기존 해결방안이 있다면 삭제 (재설정/수정 시 중복 방지)
-        // RiskSolutionRepository에 deleteByUserId 메서드가 필요합니다.
         riskSolutionRepository.deleteByUserId(userId);
 
-        // 새 해결방안 저장
         if (request.getRiskSolutions() != null) {
             request.getRiskSolutions().forEach(solution -> {
                 if (solution.getRiskLevel() < 1 || solution.getRiskLevel() > 5) {
@@ -111,12 +104,10 @@ public class UserService {
             });
         }
 
-        // 초기 설정 완료 상태로 변경
         user.setHasCompletedInitialSetup(true);
         userRepository.save(user);
     }
 
-    // 로그인
     public String signIn(SignInRequest request) {
         User user = userRepository.findByUsername(request.getUsername())
                 .orElseThrow(() -> new EntityNotFoundException("Invalid username or password"));
@@ -125,7 +116,6 @@ public class UserService {
             throw new EntityNotFoundException("Invalid username or password");
         }
 
-        // 로그인 성공 시 연속 출석 체크
         user.checkConsecutiveLogin();
         userRepository.save(user);
 
@@ -137,7 +127,6 @@ public class UserService {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new RuntimeException("User not found"));
 
-        // 기존 해결방안 삭제 후 다시 저장 (수정) - deleteByUserId가 RiskSolutionRepository에 추가되어 해결
         riskSolutionRepository.deleteByUserId(userId);
 
         request.getRiskSolutions().forEach(solution -> {
@@ -156,7 +145,6 @@ public class UserService {
         userRepository.save(user);
     }
 
-    // 회원 정보 조회
     @Transactional(readOnly = true)
     public UserProfileResponse getUserProfile(Long userId) {
         User user = userRepository.findById(userId)
@@ -164,7 +152,6 @@ public class UserService {
         return UserProfileResponse.from(user);
     }
 
-    // 회원 정보 수정 (닉네임, 사진): username은 수정 불가
     @Transactional
     public UserProfileResponse updateUserProfile(Long userId, UserUpdateRequest request) {
         User user = userRepository.findById(userId)
@@ -183,7 +170,6 @@ public class UserService {
         return UserProfileResponse.from(user);
     }
 
-    // 비밀번호 수정
     @Transactional
     public void updatePassword(Long userId, PasswordUpdateRequest request) {
         User user = userRepository.findById(userId)
@@ -201,7 +187,6 @@ public class UserService {
         userRepository.save(user);
     }
 
-    // 회원 탈퇴
     @Transactional
     public void deleteUser(Long userId) {
         User user = userRepository.findById(userId)
@@ -264,7 +249,7 @@ public class UserService {
                 .collect(Collectors.toList());
     }
 
-      @Transactional
+    @Transactional
     public FeedCharacterResponse feedCharacter(Long userId) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new EntityNotFoundException("User not found with id: " + userId));
@@ -278,17 +263,16 @@ public class UserService {
         }
 
         int currentLevel = user.getCharacterLevel();
-        final int FEED_TO_LEVEL_UP = 5; 
+        final int FEED_TO_LEVEL_UP = 5;
 
         user.setRice(user.getRice() - 1);
         user.setFeedCount(user.getFeedCount() + 1);
 
         String message;
-        
 
         if (user.getFeedCount() >= FEED_TO_LEVEL_UP) {
             user.setCharacterLevel(currentLevel + 1);
-            user.setFeedCount(0); 
+            user.setFeedCount(0);
             message = String.format("🎉 축하합니다! 캐릭터가 레벨 %d로 성장했습니다!", user.getCharacterLevel());
         } else {
             int remaining = FEED_TO_LEVEL_UP - user.getFeedCount();
@@ -318,11 +302,18 @@ public class UserService {
                 .build();
     }
 
-    private int getRequiredRiceForLevel(int level) {
-        if (level <= 1) return 10;
-        if (level <= 5) return 20 + (level - 1) * 5;
-        if (level <= 10) return 40 + (level - 5) * 10;
-        return 100;
+    // 게시글 작성 시 밥 지급 (하루 3개 제한) [추가됨]
+    @Transactional
+    public void addRiceForPost(Long userId) {
+        LocalDateTime startOfDay = LocalDateTime.now().withHour(0).withMinute(0).withSecond(0);
+        Long todayPosts = postRepository.countTodayPostsByUser(userId, startOfDay);
+
+        if (todayPosts <= 3) { // 하루 3개까지만 보상 (3번째 글까지)
+            User user = userRepository.findById(userId)
+                    .orElseThrow(() -> new RuntimeException("User not found"));
+            user.addRice(1);
+            userRepository.save(user);
+        }
     }
 
     // 댓글 작성 시 밥 지급 (하루 10개 제한)
@@ -360,9 +351,9 @@ public class UserService {
                 .orElseThrow(() -> new RuntimeException("User not found"));
 
         if (user.getConsecutiveDays() > 0 && user.getConsecutiveDays() % 7 == 0) {
-            user.addRice(5); // 7일 연속 출석 보너스
+            user.addRice(5);
         } else {
-            user.addRice(1); // 일반 출석 보상
+            user.addRice(1);
         }
         userRepository.save(user);
     }
