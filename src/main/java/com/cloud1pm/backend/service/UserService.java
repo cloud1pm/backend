@@ -264,7 +264,7 @@ public class UserService {
                 .collect(Collectors.toList());
     }
 
-    @Transactional
+      @Transactional
     public FeedCharacterResponse feedCharacter(Long userId) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new EntityNotFoundException("User not found with id: " + userId));

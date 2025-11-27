@@ -1,4 +1,6 @@
 package com.cloud1pm.backend.controller;
+import com.cloud1pm.backend.repository.UserRepository; //추가 - Username 중복 체크를 위해
+
 
 import com.cloud1pm.backend.dto.*;
 import com.cloud1pm.backend.entity.EncouragementMessage; // Added import
@@ -26,7 +28,10 @@ class SignInResponse {
 @RequestMapping("/api/user")
 @RequiredArgsConstructor
 public class UserController {
-    private final UserService userService;
+    
+    
+    private final UserService userService; 
+    private final UserRepository userRepository;  //추가 - Username 중복 체크를 위해
 
     // 회원 가입
     @PostMapping("/signup")
@@ -51,6 +56,12 @@ public class UserController {
         UserProfileResponse response = userService.getUserProfile(userId);
         return ResponseEntity.ok(response);
     }
+    @GetMapping("/check-username") //추가 - 중복 체크를 위해
+        public ResponseEntity<Boolean> checkUsername(@RequestParam String username) {
+        boolean exists = userRepository.existsByUsername(username);
+        return ResponseEntity.ok(exists);   // 존재하면 true
+    }
+
 
     // 회원 정보 수정 (닉네임, 사진)
     @PatchMapping

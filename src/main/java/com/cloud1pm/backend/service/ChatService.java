@@ -18,8 +18,6 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
-import java.time.format.DateTimeFormatter;
-import java.util.Locale;
 
 @Service
 @RequiredArgsConstructor
@@ -31,6 +29,22 @@ public class ChatService {
     private final GeminiService geminiService;
     private final UserService userService;
     private final ChatSessionRepository chatSessionRepository;
+
+    @Transactional
+    public ChatSessionResponse createNewSession(Long userId, String title) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new EntityNotFoundException("User not found with id: " + userId));
+
+        String sessionTitle = (title != null && !title.isEmpty()) ? title : "새로운 채팅";
+
+        ChatSession session = ChatSession.builder()
+                .user(user)
+                .title(sessionTitle)
+                .build();
+
+        session = chatSessionRepository.save(session);
+        return ChatSessionResponse.fromEntity(session);
+    }
 
     @Transactional(readOnly = true)
     public List<ChatSessionResponse> getChatSessions(Long userId) {
@@ -66,7 +80,7 @@ public class ChatService {
     }
 
     @Transactional(readOnly = true)
-    public ChatHistoryResponse getChatHistory(Long sessionId, Long userId) {
+    public List<ChatMessageResponse> getChatHistory(Long sessionId, Long userId) {
         ChatSession session = chatSessionRepository.findById(sessionId)
                 .orElseThrow(() -> new EntityNotFoundException("ChatSession not found with id: " + sessionId));
 
@@ -74,79 +88,26 @@ public class ChatService {
             throw new SecurityException("Access denied. Session does not belong to user.");
         }
 
-        // 1. 해당 세션의 모든 메시지 가져오기
         List<ChatMessage> messages = chatMessageRepository.findAllBySessionIdOrderByCreatedAtAsc(sessionId);
-
-        // 2. 메시지 DTO 리스트로 변환
-        List<ChatMessageResponse> messageResponses = messages.stream()
+        return messages.stream()
                 .map(ChatMessageResponse::fromEntity)
                 .collect(Collectors.toList());
-
-        // 3. 통계 계산 (User 메시지 중 감정 점수가 있는 것만 대상)
-        List<ChatMessage> userMessages = messages.stream()
-                .filter(m -> m.getIsUserMessage() && m.getSentimentScore() != null)
-                .collect(Collectors.toList());
-
-        Double avgScore = 0.0;
-        Integer avgRisk = 1; // 기본 위험도
-        String overallSentiment = "neutral";
-
-        if (!userMessages.isEmpty()) {
-            avgScore = userMessages.stream()
-                    .mapToDouble(ChatMessage::getSentimentScore)
-                    .average()
-                    .orElse(0.0);
-
-            // 평균 점수를 기반으로 위험도와 감정 상태 결정
-            avgRisk = mapSentimentScoreToRiskLevel(avgScore);
-            overallSentiment = determineSentiment(avgScore);
-        }
-
-        // 4. ChatHistoryResponse 객체 생성하여 반환
-        return ChatHistoryResponse.builder()
-                .sessionId(session.getId())
-                .title(session.getTitle())
-                .sessionSentiment(overallSentiment)
-                .averageScore(avgScore)
-                .averageRisk(avgRisk)
-                .messages(messageResponses)
-                .build();
     }
 
-    // 세션이 없는 경우 새 세션을 생성하도록 로직 추가 및 필수 필드 누락 수정
+    // [수정]: 세션이 없는 경우 새 세션을 생성하도록 로직 추가 및 필수 필드 누락 수정
     @Transactional
     public ChatResponse sendMessage(Long userId, ChatRequest request) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new RuntimeException("User not found"));
 
-        // 1. 날짜와 요일로 기본 타이틀 생성 (예: 2025년 11월 19일 (수))
-        LocalDate now = LocalDate.now();
-        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy년 MM월 dd일 (E)", Locale.KOREA);
-        String baseTitle = now.format(formatter);
-
-        // 2. 중복 타이틀 확인 및 넘버링 (예: (2), (3) ...)
-        // 사용자의 기존 세션들을 가져와서 타이틀 충돌을 검사합니다.
-        List<ChatSession> existingSessions = chatSessionRepository.findAllByUserIdOrderByUpdatedAtDesc(userId);
-
-        String finalTitle = baseTitle;
-        int count = 1;
-
-        // 중복되는 타이틀이 없을 때까지 숫자를 증가시킴
-        while (isTitleExists(existingSessions, finalTitle)) {
-            count++;
-            finalTitle = baseTitle + "(" + count + ")";
-        }
-
-        // 3. 결정된 타이틀로 새 세션 생성
+        // [FIX 2]: SessionId가 없으므로, 새 세션을 생성하여 사용합니다.
         ChatSession newSession = ChatSession.builder()
                 .user(user)
-                .title(finalTitle)
+                .title(request.getMessage().substring(0, Math.min(request.getMessage().length(), 20))) // 메시지 앞부분으로 세션명 지정
                 .build();
         ChatSession session = chatSessionRepository.save(newSession);
 
-        // --- 이하 기존 로직과 동일 ---
-
-        // 4. Gemini를 사용하여 챗봇 응답 및 감정 분석
+        // 1. Gemini를 사용하여 챗봇 응답 및 감정 분석
         Map<String, Object> geminiResult = geminiService.generateChatResponseAndAnalyzeSentiment(request.getMessage());
         String botResponseFromGemini = (String) geminiResult.get("botResponse");
         String sentiment = (String) geminiResult.get("sentiment");
@@ -163,8 +124,10 @@ public class ChatService {
                 .build();
         chatMessageRepository.save(userMessage);
 
-        // 위험도 계산 및 응답 생성
+        // 2. 위험도 계산 (기존 로직 유지)
         int riskLevel = riskAnalysisService.calculateRiskLevel(userId);
+
+        // 3. 챗봇 응답 생성 (위험도 기반 추천 로직 추가)
         String finalBotResponse = botResponseFromGemini + getRiskRecommendation(userId, riskLevel);
 
         ChatMessage botMessage = ChatMessage.builder()
@@ -175,6 +138,7 @@ public class ChatService {
                 .build();
         chatMessageRepository.save(botMessage);
 
+        // 세션의 updatedAt을 갱신합니다.
         session.setUpdatedAt(LocalDateTime.now());
         chatSessionRepository.save(session);
 
@@ -183,11 +147,6 @@ public class ChatService {
                 .sentiment(sentiment)
                 .riskLevel(riskLevel)
                 .build();
-    }
-
-    private boolean isTitleExists(List<ChatSession> sessions, String title) {
-        return sessions.stream()
-                .anyMatch(session -> session.getTitle().equals(title));
     }
 
     @Transactional
@@ -308,8 +267,14 @@ public class ChatService {
                             .average()
                             .orElse(0.0);
 
-                    // [수정] 분리된 메서드를 사용하여 판정 로직 통일
-                    String dominantSentiment = determineSentiment(avgScore);
+                    String dominantSentiment;
+                    if (avgScore > 0.1) { // 0.1 초과: 긍정
+                        dominantSentiment = "positive";
+                    } else if (avgScore < -0.1) { // -0.1 미만: 부정
+                        dominantSentiment = "negative";
+                    } else { // -0.1 ~ 0.1: 중립
+                        dominantSentiment = "neutral";
+                    }
 
                     Integer avgRiskLevel = mapSentimentScoreToRiskLevel(avgScore);
 
@@ -324,26 +289,9 @@ public class ChatService {
                 .average()
                 .orElse(0.0);
 
+        // 종합 평균 위험도는 소수점 첫째 자리에서 반올림하여 정수 형태로 반환
         Double finalOverallAverageRisk = (double) Math.round(overallAverageRisk);
 
         return new EmotionTrendResponse(finalOverallAverageRisk, dailyEmotions);
-    }
-
-    /**
-     * 감정 판정 로직 개선
-     * 기존: -0.1 ~ 0.1 범위를 neutral로 잡아 -0.018 등이 neutral이 되는 문제 해결
-     * 수정: 0을 기준으로 하거나 아주 좁은 범위만 neutral로 설정
-     */
-    private String determineSentiment(double score) {
-        // 0.05 정도로 기준을 좁힘 (사용자의 요청에 따라 음수면 negative가 나오도록 조정)
-        double epsilon = 0.01; // 아주 작은 오차 범위만 허용
-
-        if (score > epsilon) {
-            return "positive";
-        } else if (score < -epsilon) {
-            return "negative";
-        } else {
-            return "neutral"; // 거의 0에 가까울 때만 중립
-        }
     }
 }
