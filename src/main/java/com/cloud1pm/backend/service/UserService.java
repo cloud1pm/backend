@@ -67,8 +67,8 @@ public class UserService {
 
         if (hasInitialSetup) {
             request.getRiskSolutions().forEach(solution -> {
-                if (solution.getRiskLevel() < 1 || solution.getRiskLevel() > 5) {
-                    throw new IllegalArgumentException("Risk level must be between 1 and 5");
+                if (solution.getRiskLevel() < 6 || solution.getRiskLevel() > 10) {
+                    throw new IllegalArgumentException("Risk level must be between 6 and 10");
                 }
                 RiskSolution riskSolution = RiskSolution.builder()
                         .user(user)
@@ -91,8 +91,8 @@ public class UserService {
 
         if (request.getRiskSolutions() != null) {
             request.getRiskSolutions().forEach(solution -> {
-                if (solution.getRiskLevel() < 1 || solution.getRiskLevel() > 5) {
-                    throw new IllegalArgumentException("Risk level must be between 1 and 5");
+                if (solution.getRiskLevel() < 6 || solution.getRiskLevel() > 10) {
+                    throw new IllegalArgumentException("Risk level must be between 6 and 10");
                 }
 
                 RiskSolution riskSolution = RiskSolution.builder()
@@ -130,8 +130,8 @@ public class UserService {
         riskSolutionRepository.deleteByUserId(userId);
 
         request.getRiskSolutions().forEach(solution -> {
-            if (solution.getRiskLevel() < 1 || solution.getRiskLevel() > 5) {
-                throw new IllegalArgumentException("Risk level must be between 1 and 5");
+            if (solution.getRiskLevel() < 6 || solution.getRiskLevel() > 10) {
+                throw new IllegalArgumentException("Risk level must be between 6 and 10");
             }
             RiskSolution riskSolution = RiskSolution.builder()
                     .user(user)
